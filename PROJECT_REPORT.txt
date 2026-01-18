@@ -1,0 +1,160 @@
+RVCE SPORTS MANAGEMENT SYSTEM - COMPREHENSIVE PROJECT REPORT
+============================================================
+
+1. EXECUTIVE SUMMARY
+--------------------
+The RVCE Sports Management System is a full-stack web application designed to digitize and automate the entire lifecycle of sports activities at RV College of Engineering. It replaces manual paperwork with a centralized digital platform for:
+*   **Student Registration & Validation**: automated verification of student details.
+*   **Event Management**: creation, scheduling, and participant tracking for sports events.
+*   **Performance Analytics**: real-time insights into participation trends and attendance.
+*   **Communication**: bulk email announcements to filtered student groups.
+
+The system ensures data integrity using a hybrid database approach (SQL for core records, NoSQL for flexibility) and features a simulated blockchain audit trail for critical actions like approvals and participation selection.
+
+2. TECHNOLOGY STACK
+-------------------
+
+### A. Frontend (Client-Side)
+Building a modern, responsive, and interactive user interface.
+*   **Core Framework**: React.js (v18) with Vite (v7) for blazing fast build times.
+*   **Styling**: Tailwind CSS (v3.4) for utility-first, responsive design.
+*   **State Management**: React Context API (AuthContext, StudentAuthContext).
+*   **Routing**: React Router DOM (v6) for seamless page navigation.
+*   **Icons**: Lucide React for consistent, modern SVG icons.
+*   **Visualizations**: Recharts (v3.6) for analytics dashboards (Bar charts, Pie charts, Area trends).
+*   **HTTP Client**: Axios (v1.13) for communication with the backend.
+*   **Authentication**: Firebase SDK (v12) for Google Sign-In integration.
+
+### B. Backend (Server-Side)
+High-performance asynchronous API handling.
+*   **Framework**: FastAPI (Python 3.10+) - specific for high speed and auto-documentation.
+*   **Server**: Uvicorn (ASGI) for running the async application.
+*   **ORM (Object-Relational Mapping)**: SQLAlchemy (AsyncIO) for PostgreSQL interactions.
+*   **ODM (Object-Document Mapping)**: Motor (Async generic for MongoDB) for NoSQL interactions.
+*   **Data Validation**: Pydantic for strict request/response schema validation.
+*   **Security**: Python-Jose (JWT) for admin session tokens, Passlib for password hashing.
+
+### C. Databases (Hybrid Architecture)
+*   **Relational Database (PostgreSQL)**:
+    *   **Usage**: Structured, transactional data.
+    *   **Tables**: Users (Admins), Students (Approved Profiles), Events, ApprovedParticipants, EventAttendance, EmailAuditLogs.
+*   **NoSQL Database (MongoDB)**:
+    *   **Usage**: High-volume, flexible, or temporary data.
+    *   **Collections**: `student_submissions` (Registration forms), `event_participation_requests` (Join requests).
+
+3. DATA ARCHITECTURE & SCHEMA
+-----------------------------
+
+### A. SQL Schema (PostgreSQL)
+1.  **User**: Admin credentials (`email`, `password_hash`, `role`).
+2.  **Student**: Validated student profiles (`usn`, `name`, `branch`, `semester`, `dob`, `phone`, `parent_details`).
+3.  **Event**: Sports event metadata (`name`, `date`, `location`, `description`).
+4.  **ApprovedParticipant**: Finalized event roster linking `Student` -> `Event`. Includes `blockchain_hash` for audit.
+5.  **EventAttendance**: Attendance logs (`present`/`absent`) for each participant per event.
+6.  **EmailAuditLog**: History of sent emails with subject, recipient count, and success status.
+
+### B. NoSQL Schema (MongoDB)
+1.  **StudentSubmission**: Raw registration data (`usn`, `name`, `documents_base64`, `status`). Status moves `pending` -> `approved` -> `rejected`.
+2.  **EventParticipationRequest**: Student interest expression (`usn`, `event_id`, `timestamp`). Status moves `pending` -> `selected`.
+
+4. DATA FLOW & OPERATIONS
+-------------------------
+
+### Scenario 1: Student Registration (The Funnel)
+1.  **Frontend**: Student logs in via Google (Firebase).
+2.  **Action**: Fills detailed form (Personal info + Uploads) at `/student/register`.
+3.  **Backend**: Data is saved to **MongoDB** (`student_submissions`) with status "pending".
+4.  **Admin**: Views "Pending Approvals" on Dashboard.
+5.  **Approval**: Admin clicks "Approve". Backend **moves** data from MongoDB -> PostgreSQL (`students` table) and updates Mongo status to "approved".
+6.  **Result**: Student is now a "Verified Student" and can access events.
+
+### Scenario 2: Event Participation
+1.  **Admin**: Creates an Event (Saved to PostgreSQL).
+2.  **Student**: Views Event on Dashboard and clicks "Request to Join".
+3.  **Backend**: Creates a request in **MongoDB** (`event_participation_requests`).
+4.  **Admin**: Reviews requests for that event.
+5.  **Selection**: Admin selects students. Backend creates a record in **PostgreSQL** (`approved_participants`).
+6.  **Audit**: A SHA-256 hash is generated linking this record to the previous one (Blockchain Simulation).
+
+### Scenario 3: Analytics & Insights
+1.  **Frontend**: `AnalyticsDashboardPage.jsx` requests data.
+2.  **Backend (`analytics.py`)**:
+    *   Queries **MongoDB** for total registration volume and branch distribution.
+    *   Queries **PostgreSQL** for event counts, attendance rates, and top events.
+3.  **Result**: Data is merged and sent to frontend to render interactive graphs.
+
+5. FILE STRUCTURE EXPLAINED
+---------------------------
+
+### BACKEND (`/backend`)
+*   `app/main.py`: **The Brain**. Initializes the app, connects databases, and includes all routers.
+*   `app/core/`:
+    *   `config.py`: Environment variables (DB URLs, Keys).
+    *   `security.py`: Auth logic (JWT handling, Password hashing).
+*   `app/db/`: Database connection logic (`postgres.py`, `mongodb.py`).
+*   `app/models/`: Database blueprints (`sql_models.py`, `mongo_models.py`).
+*   `app/api/`: **The Endpoints**.
+    *   `auth.py`: Login/Logout.
+    *   `submissions.py`: Handle student registrations & approvals.
+    *   `events.py`: Create/Edit/Get Events.
+    *   `participation.py`: Handle join requests.
+    *   `analytics.py`: Aggregates data for charts.
+    *   `email.py`: Sends bulk emails via SMTP.
+    *   `attendance.py`: Marks students present/absent.
+
+### FRONTEND (`/frontend`)
+*   `src/pages/`:
+    *   `LandingPage.jsx`: Beautiful entry point with "Student" vs "Admin" paths.
+    *   `admin/DashboardPage.jsx`: Main control center.
+    *   `admin/AnalyticsDashboardPage.jsx`: Visual data reports.
+    *   `student/StudentRegisterPage.jsx`: The application form.
+*   `src/components/`: Reusable UI blocks (Forms, Tables, Charts).
+*   `src/context/`: Global state managers (User session data).
+*   `src/api/axios.js`: The bridge that talks to the Backend API.
+
+6. KEY FEATURES
+---------------
+1.  **Simulated Blockchain**: Every critical action creates a cryptographic hash (SHA-256) acting as a tamper-proof digital ledger.
+2.  **Smart Filtering**: Admins can filter students by Semester/Branch to send targeted email announcements.
+3.  **Dual-Authentication**: 
+    *   Google OAuth for Students (Easy, Secure).
+    *   JWT Credential Auth for Admins (Strict access control).
+4.  **Export Capability**: Data (Participant lists, Attendance) can be exported to Excel/PDF.
+5.  **Visual Analytics**: Real-time understanding of departmental sports engagement.
+
+7. FEATURE-WISE EXPLANATION
+---------------------------
+
+### A. Landing Page (`LandingPage.jsx`)
+*   **Dual Entry System**: Clear visual separation for "Student Portal" and "Admin Portal".
+*   **Animation**: Smooth fade-in effects and hover interactions for a modern feel.
+
+### B. Student Features
+1.  **Registration Page (`StudentRegisterPage.jsx`)**:
+    *   **Google Auth**: One-click login restricted to `@rvce.edu.in` domain.
+    *   **Comprehensive Form**: Captures USN, Branch, Semester, DOB, Blood Group, Phone, and Parent details.
+    *   **Document Upload**: Supports Photo and Signature uploads (converted to Base64).
+    *   **Live Status**: Shows "Pending", "Approved", or "Rejected" (with reason) statuses in real-time.
+2.  **Events Portal (`StudentEventsPage.jsx`)**:
+    *   **Activity Tracker**: "My Activity" section shows the status of all events the student has applied for.
+    *   **Event Browsing**: Grid view of upcoming events with date, location, and participant counts.
+    *   **One-Click Join**: Simple "Register Now" button for approved students.
+
+### C. Admin Features
+1.  **Dashboard (`DashboardPage.jsx`)**:
+    *   **Live Stats**: Cards showing Total Submissions, Pending Approvals, Total Events, and Active Participants.
+    *   **Recent Activity**: A live feed table of the 5 most recent student registrations.
+    *   **Status Distribution**: A Pie Chart visualizing the ratio of Approved vs Pending students.
+2.  **Pending Requests (`PendingPage.jsx`)**:
+    *   **Search & Filter**: Real-time search by Name, USN, or Sport.
+    *   **Detail View**: Modal popup showing full student profile, photo, and signature.
+    *   **Actions**: Approve (validates data), Reject (prompts for reason), or Delete.
+3.  **Event Management (`AdminEventsPage.jsx`)**:
+    *   **Creation**: Modal form to create new events with Date ranges and Descriptions.
+    *   **Roster Management**: View all students who applied for a specific event.
+    *   **Selection**: Mark students as "Selected" or "Dropped".
+    *   **Export**: Download the final participant list as an Excel file.
+4.  **Analytics (`AnalyticsDashboardPage.jsx`)**:
+    *   **Participation Trends**: Line chart showing registration spikes over time.
+    *   **Department Stats**: Pie chart showing which Branches (CSE, ECE, etc.) participate the most.
+    *   **Attendance Rates**: Bar chart comparing attendance across different events.

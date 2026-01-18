@@ -1,0 +1,13 @@
+# Environment variables
+.env
+backend/.env
+
+# Firebase config (contains API keys)
+frontend/src/config/firebase.js
+
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Logs
+*.log
