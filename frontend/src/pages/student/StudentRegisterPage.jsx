@@ -25,6 +25,7 @@ export default function StudentRegisterPage() {
         phone: '',
         parent_name: '',
         mother_name: '',
+        aadhaar_number: '',
         photo_base64: '',
         signature_base64: ''
     });
@@ -295,6 +296,20 @@ export default function StudentRegisterPage() {
                                 value={formData.mother_name}
                                 onChange={handleChange}
                                 required
+                                className="form-input"
+                            />
+                        </div>
+                        <div>
+                            <label className="form-label">Aadhaar Number *</label>
+                            <input
+                                type="text"
+                                name="aadhaar_number"
+                                value={formData.aadhaar_number}
+                                onChange={handleChange}
+                                required
+                                placeholder="12-digit Aadhaar Number"
+                                pattern="\d{12}"
+                                title="Please enter valid 12-digit Aadhaar Number"
                                 className="form-input"
                             />
                         </div>

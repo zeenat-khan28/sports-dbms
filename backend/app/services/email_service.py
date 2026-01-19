@@ -47,7 +47,7 @@ class EmailService:
         for recipient in recipients:
             try:
                 # Personalize body
-                personal_body = body_template
+                personal_body = body_template.replace("\n", "<br>")
                 # Default replacements
                 replacements = {
                     "{{student_name}}": recipient.get("name", "Student"),
@@ -106,7 +106,8 @@ class EmailService:
             server = self._connect_smtp()
             
             # Replace variables
-            personal_body = body.replace("{{student_name}}", recipient_name)
+            personal_body = body.replace("\n", "<br>")
+            personal_body = personal_body.replace("{{student_name}}", recipient_name)
             
             msg = MIMEMultipart()
             msg['From'] = self.sender

@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { submissionsAPI } from '../../api/axios';
 import {
     Users, Clock, CheckCircle, XCircle,
-    TrendingUp, Trophy, AlertCircle, Activity
+    TrendingUp, Trophy, AlertCircle, Activity, Edit
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import EditSubmissionModal from '../../components/admin/EditSubmissionModal';
 
 export default function DashboardPage() {
     const [stats, setStats] = useState({
@@ -16,6 +17,7 @@ export default function DashboardPage() {
     });
     const [recentSubmissions, setRecentSubmissions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [editingSubmission, setEditingSubmission] = useState(null);
 
     useEffect(() => {
         fetchData();
@@ -42,6 +44,17 @@ export default function DashboardPage() {
             toast.error('Failed to load dashboard data');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSaveEdit = async (id, data) => {
+        try {
+            await submissionsAPI.update(id, data);
+            toast.success('Details updated successfully');
+            fetchData(); // Refresh data
+        } catch (error) {
+            toast.error('Failed to update details');
+            throw error;
         }
     };
 
@@ -152,6 +165,7 @@ export default function DashboardPage() {
                                         <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Sport</th>
                                         <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
                                         <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Time</th>
+                                        <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
@@ -176,6 +190,15 @@ export default function DashboardPage() {
                                             </td>
                                             <td className="px-6 py-4 text-right text-sm text-gray-500 font-mono">
                                                 {new Date(sub.submitted_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <button
+                                                    onClick={() => setEditingSubmission(sub)}
+                                                    className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-blue-400 transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
                                             </td>
                                         </tr>
                                     ))}
@@ -256,6 +279,13 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Edit Modal */}
+            <EditSubmissionModal
+                submission={editingSubmission}
+                onClose={() => setEditingSubmission(null)}
+                onSave={handleSaveEdit}
+            />
         </div>
     );
 }

@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { submissionsAPI } from '../../api/axios';
 import {
     Trophy, Search, Eye, Trash2, User,
-    ChevronLeft, ChevronRight, AlertCircle, XCircle, Loader2
+    ChevronLeft, ChevronRight, AlertCircle, XCircle, Loader2, Edit
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import EditSubmissionModal from '../../components/admin/EditSubmissionModal';
 
 export default function ApprovedPage() {
     const [submissions, setSubmissions] = useState([]);
@@ -16,6 +17,7 @@ export default function ApprovedPage() {
     const [total, setTotal] = useState(0);
     const [search, setSearch] = useState('');
     const [selectedSubmission, setSelectedSubmission] = useState(null);
+    const [editingSubmission, setEditingSubmission] = useState(null);
     const perPage = 10;
 
     useEffect(() => {
@@ -68,6 +70,17 @@ export default function ApprovedPage() {
             toast.error('Failed to delete submission');
         } finally {
             setActionLoading(null);
+        }
+    };
+
+    const handleSaveEdit = async (id, data) => {
+        try {
+            await submissionsAPI.update(id, data);
+            toast.success('Details updated successfully');
+            fetchSubmissions();
+        } catch (error) {
+            toast.error('Failed to update details');
+            throw error;
         }
     };
 
@@ -129,8 +142,8 @@ export default function ApprovedPage() {
                             setPage(1);
                         }}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedSport === ''
-                                ? 'bg-amber-500 text-gray-900'
-                                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                            ? 'bg-amber-500 text-gray-900'
+                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                             }`}
                     >
                         All
@@ -143,8 +156,8 @@ export default function ApprovedPage() {
                                 setPage(1);
                             }}
                             className={`px-4 py-2 rounded-lg font-medium transition-colors ${selectedSport === sport
-                                    ? 'bg-amber-500 text-gray-900'
-                                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                ? 'bg-amber-500 text-gray-900'
+                                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                                 }`}
                         >
                             {sport}
@@ -215,6 +228,13 @@ export default function ApprovedPage() {
                                                         <Eye className="w-4 h-4 text-gray-400" />
                                                     </button>
                                                     <button
+                                                        onClick={() => setEditingSubmission(sub)}
+                                                        className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors"
+                                                        title="Edit Details"
+                                                    >
+                                                        <Edit className="w-4 h-4 text-blue-400" />
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleDelete(sub.id)}
                                                         disabled={actionLoading === sub.id}
                                                         className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
@@ -269,6 +289,13 @@ export default function ApprovedPage() {
                 )}
             </div>
 
+            {/* Edit Modal */}
+            <EditSubmissionModal
+                submission={editingSubmission}
+                onClose={() => setEditingSubmission(null)}
+                onSave={handleSaveEdit}
+            />
+
             {/* Detail Modal */}
             {selectedSubmission && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -277,6 +304,12 @@ export default function ApprovedPage() {
                             <div>
                                 <span className="badge badge-approved mb-2">Approved</span>
                                 <h2 className="text-xl font-bold text-white">Player Details</h2>
+                                <button
+                                    onClick={() => setEditingSubmission(selectedSubmission)}
+                                    className="text-sm text-blue-400 hover:text-blue-300 underline mt-1"
+                                >
+                                    Edit Details
+                                </button>
                             </div>
                             <button
                                 onClick={() => setSelectedSubmission(null)}
@@ -338,7 +371,7 @@ export default function ApprovedPage() {
                                 </div>
                                 <div>
                                     <span className="text-gray-500">Course</span>
-                                    <p className="text-white">{selectedSubmission.course_name}</p>
+                                    <p className="text-white">{selectedSubmission.course_name || 'BE'}</p>
                                 </div>
                                 <div className="col-span-2">
                                     <span className="text-gray-500">Address</span>

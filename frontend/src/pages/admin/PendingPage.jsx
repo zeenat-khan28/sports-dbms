@@ -3,9 +3,10 @@ import { submissionsAPI } from '../../api/axios';
 import {
     Clock, CheckCircle, XCircle, Eye, Trash2,
     Search, ChevronLeft, ChevronRight, AlertCircle,
-    Loader2, User
+    Loader2, User, Edit
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import EditSubmissionModal from '../../components/admin/EditSubmissionModal';
 
 export default function PendingPage() {
     const [submissions, setSubmissions] = useState([]);
@@ -15,6 +16,7 @@ export default function PendingPage() {
     const [total, setTotal] = useState(0);
     const [search, setSearch] = useState('');
     const [selectedSubmission, setSelectedSubmission] = useState(null);
+    const [editingSubmission, setEditingSubmission] = useState(null);
     const perPage = 10;
 
     useEffect(() => {
@@ -82,6 +84,17 @@ export default function PendingPage() {
             toast.error('Failed to delete submission');
         } finally {
             setActionLoading(null);
+        }
+    };
+
+    const handleSaveEdit = async (id, data) => {
+        try {
+            await submissionsAPI.update(id, data);
+            toast.success('Details updated successfully');
+            fetchSubmissions();
+        } catch (error) {
+            toast.error('Failed to update details');
+            throw error;
         }
     };
 
@@ -179,6 +192,13 @@ export default function PendingPage() {
                                                         <Eye className="w-4 h-4 text-gray-400" />
                                                     </button>
                                                     <button
+                                                        onClick={() => setEditingSubmission(sub)}
+                                                        className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors"
+                                                        title="Edit Details"
+                                                    >
+                                                        <Edit className="w-4 h-4 text-blue-400" />
+                                                    </button>
+                                                    <button
                                                         onClick={() => handleApprove(sub.id)}
                                                         disabled={actionLoading === sub.id}
                                                         className="p-2 hover:bg-emerald-500/20 rounded-lg transition-colors"
@@ -249,12 +269,27 @@ export default function PendingPage() {
                 )}
             </div>
 
+            {/* Edit Modal */}
+            <EditSubmissionModal
+                submission={editingSubmission}
+                onClose={() => setEditingSubmission(null)}
+                onSave={handleSaveEdit}
+            />
+
             {/* Detail Modal */}
             {selectedSubmission && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
                     <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-fadeIn">
                         <div className="p-6 border-b border-gray-800 flex items-center justify-between">
-                            <h2 className="text-xl font-bold text-white">Submission Details</h2>
+                            <div>
+                                <h2 className="text-xl font-bold text-white">Submission Details</h2>
+                                <button
+                                    onClick={() => setEditingSubmission(selectedSubmission)}
+                                    className="ml-4 text-sm text-blue-400 hover:text-blue-300 underline"
+                                >
+                                    Edit
+                                </button>
+                            </div>
                             <button
                                 onClick={() => setSelectedSubmission(null)}
                                 className="text-gray-500 hover:text-gray-300"

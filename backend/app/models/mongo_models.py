@@ -24,6 +24,7 @@ class StudentSubmission(BaseModel):
     phone: str
     parent_name: str
     mother_name: str
+    aadhaar_number: str
     
     # Uploads (Base64 encoded)
     photo_base64: Optional[str] = None

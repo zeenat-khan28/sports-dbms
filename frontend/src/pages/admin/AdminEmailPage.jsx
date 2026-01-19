@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { emailAPI } from '../../api/axios';
-import { Mail, CheckCircle, AlertCircle, Users, RefreshCw, Send, Eye } from 'lucide-react';
+import { emailAPI, submissionsAPI } from '../../api/axios';
+import { Mail, CheckCircle, AlertCircle, Users, RefreshCw, Send, Eye, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const BRANCHES = ["CSE", "ISE", "ECE", "EEE", "ME", "CV", "AI&ML", "BT", "CH"];
@@ -17,6 +17,11 @@ export default function AdminEmailPage() {
     const [previewData, setPreviewData] = useState(null);
     const [showConfirm, setShowConfirm] = useState(false);
 
+    // Student Search State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [selectedStudents, setSelectedStudents] = useState([]);
+
     const toggleFilter = (type, value) => {
         setFilters(prev => {
             const current = prev[type];
@@ -28,13 +33,48 @@ export default function AdminEmailPage() {
         setPreviewData(null); // Reset preview on filter change
     };
 
+    const handleSearch = async (e) => {
+        const term = e.target.value;
+        setSearchTerm(term);
+        if (term.length < 2) {
+            setSearchResults([]);
+            return;
+        }
+
+        try {
+            const res = await submissionsAPI.getAll({
+                search: term,
+                status: 'approved',
+                per_page: 5
+            });
+            setSearchResults(res.data.submissions);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const addStudent = (student) => {
+        if (!selectedStudents.find(s => s.usn === student.usn)) {
+            setSelectedStudents(prev => [...prev, student]);
+            setPreviewData(null);
+        }
+        setSearchTerm('');
+        setSearchResults([]);
+    };
+
+    const removeStudent = (usn) => {
+        setSelectedStudents(prev => prev.filter(s => s.usn !== usn));
+        setPreviewData(null);
+    };
+
     const handlePreview = async () => {
         setLoading(true);
         try {
             const res = await emailAPI.send({
                 filters: {
                     semester: filters.semester.length > 0 ? filters.semester : null,
-                    branch: filters.branch.length > 0 ? filters.branch : null
+                    branch: filters.branch.length > 0 ? filters.branch : null,
+                    usn: selectedStudents.length > 0 ? selectedStudents.map(s => s.usn) : null
                 },
                 subject,
                 body,
@@ -60,7 +100,8 @@ export default function AdminEmailPage() {
             const res = await emailAPI.send({
                 filters: {
                     semester: filters.semester.length > 0 ? filters.semester : null,
-                    branch: filters.branch.length > 0 ? filters.branch : null
+                    branch: filters.branch.length > 0 ? filters.branch : null,
+                    usn: selectedStudents.length > 0 ? selectedStudents.map(s => s.usn) : null
                 },
                 subject,
                 body,
@@ -71,6 +112,8 @@ export default function AdminEmailPage() {
             setPreviewData(null);
             setSubject('');
             setFilters({ semester: [], branch: [] });
+            setSelectedStudents([]);
+            setBody('Dear {{student_name}},\n\n\n\nRegards,\nRVCE Sports Dept');
         } catch (err) {
             toast.error("Failed to send emails.");
             console.error(err);
@@ -117,8 +160,8 @@ export default function AdminEmailPage() {
                                         key={sem}
                                         onClick={() => toggleFilter('semester', sem)}
                                         className={`py-2 rounded-md text-sm font-medium transition-all ${filters.semester.includes(sem)
-                                                ? 'bg-blue-600 text-white shadow-md ring-2 ring-blue-500/50'
-                                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                            ? 'bg-blue-600 text-white shadow-md ring-2 ring-blue-500/50'
+                                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                                             }`}
                                     >
                                         {sem}
@@ -128,7 +171,7 @@ export default function AdminEmailPage() {
                         </div>
 
                         {/* Branch Filter */}
-                        <div>
+                        <div className="mb-6">
                             <label className="text-sm font-semibold text-slate-300 mb-2 block uppercase tracking-wider">Branch</label>
                             <div className="flex flex-wrap gap-2">
                                 {BRANCHES.map(branch => (
@@ -136,8 +179,8 @@ export default function AdminEmailPage() {
                                         key={branch}
                                         onClick={() => toggleFilter('branch', branch)}
                                         className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${filters.branch.includes(branch)
-                                                ? 'bg-purple-600/20 text-purple-300 border-purple-500'
-                                                : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:border-slate-500'
+                                            ? 'bg-purple-600/20 text-purple-300 border-purple-500'
+                                            : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:border-slate-500'
                                             }`}
                                     >
                                         {branch}
@@ -146,9 +189,60 @@ export default function AdminEmailPage() {
                             </div>
                         </div>
 
+                        {/* Specific Student Filter */}
+                        <div>
+                            <label className="text-sm font-semibold text-slate-300 mb-2 block uppercase tracking-wider">Specific Students</label>
+                            <div className="relative mb-3">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Search className="h-4 w-4 text-slate-500" />
+                                </div>
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={handleSearch}
+                                    placeholder="Search by Name or USN..."
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                                />
+                                {searchResults.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                                        {searchResults.map(student => (
+                                            <button
+                                                key={student.id}
+                                                onClick={() => addStudent(student)}
+                                                className="w-full text-left px-4 py-2 hover:bg-slate-700 transition-colors border-b border-slate-700 last:border-0"
+                                            >
+                                                <div className="text-sm font-medium text-white">{student.student_name}</div>
+                                                <div className="text-xs text-slate-400">{student.usn} • {student.branch}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Selected Students Tags */}
+                            {selectedStudents.length > 0 && (
+                                <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50 max-h-40 overflow-y-auto space-y-2">
+                                    {selectedStudents.map(student => (
+                                        <div key={student.usn} className="flex items-center justify-between bg-slate-800 border border-slate-600 rounded px-2 py-1.5">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-semibold text-slate-200 truncate">{student.student_name}</div>
+                                                <div className="text-[10px] text-slate-400">{student.usn}</div>
+                                            </div>
+                                            <button
+                                                onClick={() => removeStudent(student.usn)}
+                                                className="text-slate-500 hover:text-red-400 p-1"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="mt-6 pt-6 border-t border-slate-700">
                             <p className="text-xs text-slate-500 mb-2">Note: Only approved students will receive emails.</p>
-                            {filters.semester.length === 0 && filters.branch.length === 0 && (
+                            {filters.semester.length === 0 && filters.branch.length === 0 && selectedStudents.length === 0 && (
                                 <div className="bg-amber-900/20 border border-amber-900/50 text-amber-200 p-3 rounded-lg text-xs flex gap-2">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
                                     Selecting no filters will target ALL students.

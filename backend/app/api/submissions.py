@@ -11,6 +11,8 @@ from app.schemas.schemas import (
 from app.core.security import get_current_admin_user, get_current_student
 from app.core.blockchain import blockchain
 
+from pymongo.errors import DuplicateKeyError
+
 router = APIRouter(prefix="/submissions", tags=["Student Submissions"])
 
 
@@ -56,7 +58,13 @@ async def create_submission(
         "firebase_uid": student["uid"]
     }
     
-    result = await collection.insert_one(doc)
+    try:
+        result = await collection.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Duplicate submission: A student with USN {submission.usn} has already submitted."
+        )
     
     return StudentSubmissionResponse(
         id=str(result.inserted_id),
@@ -74,6 +82,7 @@ async def create_submission(
         phone=doc.get("phone"),
         parent_name=doc.get("parent_name"),
         mother_name=doc.get("mother_name"),
+        aadhaar_number=doc.get("aadhaar_number"),
         contact_address=doc.get("contact_address"),
         email=doc.get("email"),
         photo_base64=doc.get("photo_base64"),
@@ -115,6 +124,7 @@ async def get_my_submission(
         phone=doc.get("phone"),
         parent_name=doc.get("parent_name"),
         mother_name=doc.get("mother_name"),
+        aadhaar_number=doc.get("aadhaar_number"),
         contact_address=doc.get("contact_address"),
         email=doc.get("email"),
         photo_base64=doc.get("photo_base64"),
@@ -169,6 +179,7 @@ async def list_submissions(
             "submitted_at": doc["submitted_at"],
             "reviewed_at": doc.get("reviewed_at"),
             "photo_base64": doc.get("photo_base64"),
+            "signature_base64": doc.get("signature_base64"),
             "date_of_birth": doc.get("date_of_birth"),
             "blood_group": doc.get("blood_group"),
             "phone": doc.get("phone"),
@@ -217,7 +228,7 @@ async def update_submission_status(
     update_data: StudentSubmissionUpdate,
     current_user: User = Depends(get_current_admin_user)
 ):
-    """Update submission status (Admin only)."""
+    """Update submission details and status (Admin only)."""
     collection = get_submissions_collection()
     
     try:
@@ -230,95 +241,91 @@ async def update_submission_status(
     if not doc:
         raise HTTPException(status_code=404, detail="Submission not found")
     
-    update_dict = {
-        "status": update_data.status,
-        "reviewed_at": datetime.utcnow(),
-        "reviewed_by": current_user.email
-    }
+    # 1. Prepare Update Dictionary
+    update_fields = update_data.model_dump(exclude_unset=True)
     
-    if update_data.status == "rejected":
-        update_dict["rejection_reason"] = update_data.rejection_reason
+    # Handle logic if Status is changing
+    if "status" in update_fields:
+        update_fields["reviewed_at"] = datetime.utcnow()
+        update_fields["reviewed_by"] = current_user.email
+        
+        # If approving, assign SLN if not present
+        if update_fields["status"] == "approved" and not doc.get("sln"):
+            max_sln = await collection.find_one(
+                {"sln": {"$ne": None}},
+                sort=[("sln", -1)]
+            )
+            update_fields["sln"] = (max_sln.get("sln", 0) if max_sln else 0) + 1
+
+            # Blockchain Log (use new USN if updated, else old)
+            target_usn = update_fields.get("usn", doc["usn"])
+            hash_value = blockchain.log_action(
+                usn=target_usn,
+                event_id=0,
+                action="approved",
+                admin_email=current_user.email,
+                event_name="Student Registration"
+            )
+            update_fields["blockchain_hash"] = hash_value
+            
+    # 2. Perform MongoDB Update
+    if update_fields:
+        await collection.update_one({"_id": obj_id}, {"$set": update_fields})
     
-    if update_data.status == "approved":
-        # Assign SLN
-        max_sln = await collection.find_one(
-            {"sln": {"$ne": None}},
-            sort=[("sln", -1)]
-        )
-        update_dict["sln"] = (max_sln.get("sln", 0) if max_sln else 0) + 1
-        
-        # Create blockchain hash
-        hash_value = blockchain.log_action(
-            usn=doc["usn"],
-            event_id=0,  # 0 for registration approval
-            action="approved",
-            admin_email=current_user.email,
-            event_name="Student Registration"
-        )
-        update_dict["blockchain_hash"] = hash_value
-        
-        # ---------------------------------------------------------
-        # SYNC TO POSTGRESQL (Satisfy requirement: "stored in db")
-        # ---------------------------------------------------------
+    # 3. Fetch Updated Document
+    updated = await collection.find_one({"_id": obj_id})
+    
+    # 4. Sync to PostgreSQL if Status is Approved (or if just updating details for an already approved student)
+    if updated["status"] == "approved":
         from app.db.postgres import get_postgres_session
         from app.models.sql_models import Student
         from sqlalchemy import select
         
-        # Get async session
-        # Note: In a cleaner architecture, this would be dependency injected,
-        # but here we need to create it manually inside the loop or use a helper.
-        # Since this is an async function, we can use the generator.
         gen = get_postgres_session()
         pg_session = await anext(gen)
         
         try:
-            # Check if student exists
-            result = await pg_session.execute(select(Student).where(Student.usn == doc["usn"]))
+            # Check if student exists (by USN)
+            result = await pg_session.execute(select(Student).where(Student.usn == updated["usn"]))
             existing_student = result.scalar_one_or_none()
             
             if existing_student:
                 # Update existing
-                existing_student.name = doc["student_name"]
-                existing_student.email = doc["email"]
-                existing_student.branch = doc["branch"]
-                existing_student.semester = doc["semester"]
-                existing_student.phone = doc.get("phone")
-                existing_student.dob = doc.get("date_of_birth")
-                existing_student.blood_group = doc.get("blood_group")
-                existing_student.parent_name = doc.get("parent_name")
-                existing_student.mother_name = doc.get("mother_name")
-                existing_student.address = doc.get("contact_address")
+                existing_student.name = updated["student_name"]
+                existing_student.email = updated.get("email")
+                existing_student.branch = updated["branch"]
+                existing_student.semester = updated["semester"]
+                existing_student.phone = updated.get("phone")
+                existing_student.dob = updated.get("date_of_birth")
+                existing_student.blood_group = updated.get("blood_group")
+                existing_student.parent_name = updated.get("parent_name")
+                existing_student.mother_name = updated.get("mother_name")
+                existing_student.address = updated.get("contact_address")
             else:
                 # Create new
                 new_student = Student(
-                    usn=doc["usn"],
-                    name=doc["student_name"],
-                    email=doc["email"],
-                    branch=doc["branch"],
-                    semester=doc["semester"],
-                    phone=doc.get("phone"),
-                    dob=doc.get("date_of_birth"),
-                    blood_group=doc.get("blood_group"),
-                    parent_name=doc.get("parent_name"),
-                    mother_name=doc.get("mother_name"),
-                    address=doc.get("contact_address")
+                    usn=updated["usn"],
+                    name=updated["student_name"],
+                    email=updated.get("email"),
+                    branch=updated["branch"],
+                    semester=updated["semester"],
+                    phone=updated.get("phone"),
+                    dob=updated.get("date_of_birth"),
+                    blood_group=updated.get("blood_group"),
+                    parent_name=updated.get("parent_name"),
+                    mother_name=updated.get("mother_name"),
+                    address=updated.get("contact_address")
                 )
                 pg_session.add(new_student)
             
             await pg_session.commit()
-            print(f"✅ Synced student {doc['usn']} to PostgreSQL.")
+            print(f"✅ Synced student {updated['usn']} to PostgreSQL.")
             
         except Exception as e:
             print(f"❌ Failed to sync to Postgres: {e}")
-            # We log but do not fail the request to avoid blocking approval if SQL is down
-            # Alternatively, we could raise HTTPException to ensure consistency
         finally:
             await pg_session.close()
 
-    await collection.update_one({"_id": obj_id}, {"$set": update_dict})
-    
-    updated = await collection.find_one({"_id": obj_id})
-    
     return StudentSubmissionResponse(
         id=str(updated["_id"]),
         student_name=updated["student_name"],
@@ -328,7 +335,17 @@ async def update_submission_status(
         status=updated["status"],
         sln=updated.get("sln"),
         submitted_at=updated["submitted_at"],
-        reviewed_at=updated.get("reviewed_at")
+        reviewed_at=updated.get("reviewed_at"),
+        rejection_reason=updated.get("rejection_reason"),
+        date_of_birth=updated.get("date_of_birth"),
+        blood_group=updated.get("blood_group"),
+        phone=updated.get("phone"),
+        parent_name=updated.get("parent_name"),
+        mother_name=updated.get("mother_name"),
+        contact_address=updated.get("contact_address"),
+        email=updated.get("email"),
+        photo_base64=updated.get("photo_base64"),
+        signature_base64=updated.get("signature_base64")
     )
 
 

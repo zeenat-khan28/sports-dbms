@@ -5,6 +5,7 @@ from datetime import datetime
 class RecipientFilter(BaseModel):
     semester: Optional[List[int]] = None
     branch: Optional[List[str]] = None
+    usn: Optional[List[str]] = None
     event_id: Optional[int] = None
     status: Optional[str] = "approved"
 

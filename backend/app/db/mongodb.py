@@ -15,6 +15,13 @@ async def connect_to_mongo():
     
     # Verify connection
     await _client.admin.command('ping')
+    
+    # -----------------------------------------------------
+    # Ensure Indexes
+    # -----------------------------------------------------
+    # Enforce unique USN at database level
+    await _db["student_submissions"].create_index("usn", unique=True)
+    
     print(f"✅ Connected to MongoDB: {settings.MONGO_DB_NAME}")
 
 

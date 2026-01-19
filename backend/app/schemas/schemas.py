@@ -77,13 +77,28 @@ class StudentSubmissionCreate(BaseModel):
     phone: str
     parent_name: str
     mother_name: str
+    aadhaar_number: str
     photo_base64: Optional[str] = None
     signature_base64: Optional[str] = None
 
 
 class StudentSubmissionUpdate(BaseModel):
-    status: str  # pending, approved, rejected
+    status: Optional[str] = None  # pending, approved, rejected
     rejection_reason: Optional[str] = None
+    
+    # Editable Fields
+    student_name: Optional[str] = None
+    usn: Optional[str] = None
+    branch: Optional[str] = None
+    semester: Optional[int] = None
+    date_of_birth: Optional[str] = None
+    blood_group: Optional[str] = None
+    phone: Optional[str] = None
+    parent_name: Optional[str] = None
+    mother_name: Optional[str] = None
+    contact_address: Optional[str] = None
+    aadhaar_number: Optional[str] = None
+    email: Optional[str] = None
 
 
 class StudentSubmissionResponse(BaseModel):
@@ -104,6 +119,7 @@ class StudentSubmissionResponse(BaseModel):
     phone: Optional[str] = None
     parent_name: Optional[str] = None
     mother_name: Optional[str] = None
+    aadhaar_number: Optional[str] = None
     contact_address: Optional[str] = None
     email: Optional[str] = None
     

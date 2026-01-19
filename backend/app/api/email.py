@@ -46,6 +46,10 @@ async def send_email(
         if request.filters.branch:
             if isinstance(request.filters.branch, list) and len(request.filters.branch) > 0:
                 query["branch"] = {"$in": request.filters.branch}
+        
+        if request.filters.usn:
+            if isinstance(request.filters.usn, list) and len(request.filters.usn) > 0:
+                query["usn"] = {"$in": request.filters.usn}
     
     # Execute Query
     cursor = collection.find(query)
