@@ -8,21 +8,34 @@ _db = None
 
 
 async def connect_to_mongo():
-    """Connect to MongoDB."""
+    """Connect to MongoDB Atlas."""
     global _client, _db
-    _client = AsyncIOMotorClient(settings.MONGO_URI)
-    _db = _client[settings.MONGO_DB_NAME]
     
-    # Verify connection
-    await _client.admin.command('ping')
-    
-    # -----------------------------------------------------
-    # Ensure Indexes
-    # -----------------------------------------------------
-    # Enforce unique USN at database level
-    await _db["student_submissions"].create_index("usn", unique=True)
-    
-    print(f"✅ Connected to MongoDB: {settings.MONGO_DB_NAME}")
+    try:
+        # Create client with timeout settings for Atlas
+        _client = AsyncIOMotorClient(
+            settings.MONGO_URI,
+            serverSelectionTimeoutMS=5000,  # 5 second timeout
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000
+        )
+        _db = _client[settings.MONGO_DB_NAME]
+        
+        # Verify connection by pinging the server
+        await _client.admin.command('ping')
+        print(f"✅ MongoDB Connected Successfully!")
+        print(f"   Database: {settings.MONGO_DB_NAME}")
+        
+        # -----------------------------------------------------
+        # Ensure Indexes
+        # -----------------------------------------------------
+        # Enforce unique USN at database level
+        await _db["student_submissions"].create_index("usn", unique=True)
+        
+    except Exception as e:
+        print(f"❌ MongoDB Connection Failed: {e}")
+        print(f"   URI: {settings.MONGO_URI[:30]}...")  # Show first 30 chars only
+        raise
 
 
 async def close_mongo_connection():
