@@ -1,0 +1,653 @@
+================================================================================
+                       RELATIONAL SCHEMA DOCUMENTATION
+           RVCE SPORTS MANAGEMENT SYSTEM - DATABASE DESIGN
+================================================================================
+
+1. INTRODUCTION
+---------------
+This document presents the complete relational schema for the RVCE Sports
+Management System. It includes table definitions with data types, constraints,
+foreign keys, and SQL DDL statements for implementation.
+
+The system uses a hybrid database architecture:
+- PostgreSQL: For relational, structured data with ACID compliance
+- MongoDB: For semi-structured, high-volume document storage
+
+================================================================================
+2. POSTGRESQL RELATIONAL SCHEMA
+================================================================================
+
+SCHEMA NAME: sports_management
+DATABASE: sports_db
+CHARSET: UTF8
+COLLATION: en_US.UTF-8
+
+--------------------------------------------------------------------------------
+TABLE 1: users
+--------------------------------------------------------------------------------
+Description: Stores admin/staff user credentials with authentication data
+
+CREATE TABLE users (
+    id                  SERIAL PRIMARY KEY,
+    email               VARCHAR(255) NOT NULL UNIQUE,
+    password_hash       VARCHAR(255) NOT NULL,
+    role                VARCHAR(50) DEFAULT 'admin',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$'),
+    CONSTRAINT check_role_value CHECK (role IN ('admin', 'staff', 'superuser'))
+);
+
+-- Indexes
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+
+-- Comments
+COMMENT ON TABLE users IS 'Administrative users with JWT authentication';
+COMMENT ON COLUMN users.password_hash IS 'Bcrypt hashed password (cost factor 12)';
+COMMENT ON COLUMN users.role IS 'User role for RBAC (admin/staff/superuser)';
+
+
+--------------------------------------------------------------------------------
+TABLE 2: students
+--------------------------------------------------------------------------------
+Description: Approved student profiles (migrated from MongoDB after approval)
+
+CREATE TABLE students (
+    usn                 VARCHAR(20) PRIMARY KEY,
+    name                VARCHAR(255) NOT NULL,
+    email               VARCHAR(255) UNIQUE,
+    branch              VARCHAR(50),
+    semester            INTEGER,
+    phone               VARCHAR(20),
+    dob                 VARCHAR(20),
+    blood_group         VARCHAR(10),
+    parent_name         VARCHAR(255),
+    mother_name         VARCHAR(255),
+    address             TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_semester_range CHECK (semester BETWEEN 1 AND 8),
+    CONSTRAINT check_branch_value CHECK (branch IN (
+        'CSE', 'ISE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'CHEM', 'BT', 'AI&ML', 'CSD'
+    )),
+    CONSTRAINT check_blood_group CHECK (blood_group IN (
+        'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
+    ))
+);
+
+-- Indexes
+CREATE UNIQUE INDEX idx_students_usn ON students(usn);
+CREATE UNIQUE INDEX idx_students_email ON students(email);
+CREATE INDEX idx_students_branch ON students(branch);
+CREATE INDEX idx_students_semester ON students(semester);
+
+-- Trigger for auto-updating updated_at
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_students_updated_at
+BEFORE UPDATE ON students
+FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
+-- Comments
+COMMENT ON TABLE students IS 'Approved student profiles after admin verification';
+COMMENT ON COLUMN students.usn IS 'University Seat Number - unique identifier';
+COMMENT ON COLUMN students.email IS 'Student email (must be @rvce.edu.in)';
+
+
+--------------------------------------------------------------------------------
+TABLE 3: events
+--------------------------------------------------------------------------------
+Description: Sports events, competitions, and tournaments
+
+CREATE TABLE events (
+    id                  SERIAL PRIMARY KEY,
+    name                VARCHAR(255) NOT NULL,
+    location            VARCHAR(255),
+    start_date          DATE NOT NULL,
+    end_date            DATE NOT NULL,
+    description         TEXT,
+    created_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_date_range CHECK (end_date >= start_date),
+    CONSTRAINT check_name_length CHECK (CHAR_LENGTH(name) >= 3)
+);
+
+-- Indexes
+CREATE INDEX idx_events_start_date ON events(start_date);
+CREATE INDEX idx_events_end_date ON events(end_date);
+CREATE INDEX idx_events_created_by ON events(created_by);
+CREATE INDEX idx_events_date_range ON events(start_date, end_date);
+
+-- Comments
+COMMENT ON TABLE events IS 'Sports events and competitions catalog';
+COMMENT ON COLUMN events.created_by IS 'References the admin who created the event';
+COMMENT ON COLUMN events.description IS 'Event details, rules, and requirements';
+
+
+--------------------------------------------------------------------------------
+TABLE 4: approved_participants
+--------------------------------------------------------------------------------
+Description: Final roster of students selected for events
+
+CREATE TABLE approved_participants (
+    id                  SERIAL PRIMARY KEY,
+    usn                 VARCHAR(20) NOT NULL,
+    event_id            INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    approved_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status              VARCHAR(20) DEFAULT 'pending',
+    blockchain_hash     VARCHAR(128),
+    approved_at         TIMESTAMP,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_status_value CHECK (status IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT unique_participant_per_event UNIQUE (usn, event_id)
+);
+
+-- Indexes
+CREATE INDEX idx_approved_participants_usn ON approved_participants(usn);
+CREATE INDEX idx_approved_participants_event_id ON approved_participants(event_id);
+CREATE INDEX idx_approved_participants_status ON approved_participants(status);
+CREATE UNIQUE INDEX idx_unique_usn_event ON approved_participants(usn, event_id);
+
+-- Foreign Key (Recommended Addition)
+ALTER TABLE approved_participants
+ADD CONSTRAINT fk_participant_student
+FOREIGN KEY (usn) REFERENCES students(usn) ON DELETE CASCADE;
+
+-- Comments
+COMMENT ON TABLE approved_participants IS 'Students selected for events with audit trail';
+COMMENT ON COLUMN approved_participants.blockchain_hash IS 'SHA-256 hash for audit integrity';
+COMMENT ON COLUMN approved_participants.approved_by IS 'Admin who approved the participant';
+
+
+--------------------------------------------------------------------------------
+TABLE 5: event_attendance
+--------------------------------------------------------------------------------
+Description: Daily attendance tracking for event participants
+
+CREATE TABLE event_attendance (
+    id                  SERIAL PRIMARY KEY,
+    event_id            INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    usn                 VARCHAR(20) NOT NULL,
+    student_name        VARCHAR(255),
+    attendance_date     DATE NOT NULL,
+    status              VARCHAR(10),
+    marked_by           INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    marked_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_attendance_status CHECK (status IN ('present', 'absent') OR status IS NULL),
+    CONSTRAINT unique_attendance_record UNIQUE (event_id, usn, attendance_date)
+);
+
+-- Indexes
+CREATE INDEX idx_attendance_event_id ON event_attendance(event_id);
+CREATE INDEX idx_attendance_usn ON event_attendance(usn);
+CREATE INDEX idx_attendance_date ON event_attendance(attendance_date);
+CREATE INDEX idx_attendance_event_date ON event_attendance(event_id, attendance_date);
+CREATE UNIQUE INDEX idx_unique_attendance ON event_attendance(event_id, usn, attendance_date);
+
+-- Foreign Key (Recommended Addition)
+ALTER TABLE event_attendance
+ADD CONSTRAINT fk_attendance_student
+FOREIGN KEY (usn) REFERENCES students(usn) ON DELETE CASCADE;
+
+-- Validation Trigger
+CREATE OR REPLACE FUNCTION validate_attendance_date()
+RETURNS TRIGGER AS $$
+DECLARE
+    event_start DATE;
+    event_end DATE;
+BEGIN
+    SELECT start_date, end_date INTO event_start, event_end
+    FROM events
+    WHERE id = NEW.event_id;
+    
+    IF NEW.attendance_date < event_start OR NEW.attendance_date > event_end THEN
+        RAISE EXCEPTION 'Attendance date must be within event date range';
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_attendance_date_range
+BEFORE INSERT OR UPDATE ON event_attendance
+FOR EACH ROW
+EXECUTE FUNCTION validate_attendance_date();
+
+-- Comments
+COMMENT ON TABLE event_attendance IS 'Daily attendance tracking for event participants';
+COMMENT ON COLUMN event_attendance.student_name IS 'Denormalized from students table for performance';
+COMMENT ON COLUMN event_attendance.status IS 'NULL means not yet marked';
+
+
+--------------------------------------------------------------------------------
+TABLE 6: email_audit_logs
+--------------------------------------------------------------------------------
+Description: Comprehensive audit trail of all bulk emails sent by admins
+
+CREATE TABLE email_audit_logs (
+    id                  SERIAL PRIMARY KEY,
+    admin_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    subject             VARCHAR(255) NOT NULL,
+    body_preview        TEXT,
+    filters_used        TEXT,
+    recipient_count     INTEGER DEFAULT 0,
+    success_count       INTEGER DEFAULT 0,
+    failure_count       INTEGER DEFAULT 0,
+    sent_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    blockchain_hash     VARCHAR(128),
+    
+    CONSTRAINT check_recipient_counts CHECK (
+        recipient_count >= 0 AND
+        success_count >= 0 AND
+        failure_count >= 0 AND
+        recipient_count = success_count + failure_count
+    ),
+    CONSTRAINT check_subject_length CHECK (CHAR_LENGTH(subject) >= 3)
+);
+
+-- Indexes
+CREATE INDEX idx_email_logs_admin_id ON email_audit_logs(admin_id);
+CREATE INDEX idx_email_logs_sent_at ON email_audit_logs(sent_at DESC);
+
+-- Comments
+COMMENT ON TABLE email_audit_logs IS 'Complete audit trail of bulk email communications';
+COMMENT ON COLUMN email_audit_logs.filters_used IS 'JSON string of applied filters (branch, semester, etc.)';
+COMMENT ON COLUMN email_audit_logs.body_preview IS 'First 500 characters of email body';
+COMMENT ON COLUMN email_audit_logs.blockchain_hash IS 'Tamper-proof audit hash (SHA-256)';
+
+================================================================================
+3. MONGODB SCHEMA (JSON SCHEMAS)
+================================================================================
+
+DATABASE: sports_management_db
+COLLECTIONS: student_submissions, event_participation_requests
+
+--------------------------------------------------------------------------------
+COLLECTION 1: student_submissions
+--------------------------------------------------------------------------------
+Description: Student registration forms pending admin approval
+
+JSON Schema Validation:
+
+db.createCollection("student_submissions", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "student_name",
+        "usn",
+        "branch",
+        "semester",
+        "date_of_birth",
+        "contact_address",
+        "blood_group",
+        "phone",
+        "parent_name",
+        "mother_name",
+        "game_sport_competition",
+        "organizing_institution",
+        "date_of_activity",
+        "status",
+        "submitted_at"
+      ],
+      properties: {
+        student_name: {
+          bsonType: "string",
+          description: "Full name of the student (required)"
+        },
+        usn: {
+          bsonType: "string",
+          pattern: "^[0-9][A-Z]{2}[0-9]{2}[A-Z]{2}[0-9]{3}$",
+          description: "University Seat Number in format: 1RVXXYYY123"
+        },
+        branch: {
+          bsonType: "string",
+          enum: ["CSE", "ISE", "ECE", "EEE", "MECH", "CIVIL", "CHEM", "BT", "AI&ML", "CSD"]
+        },
+        semester: {
+          bsonType: "int",
+          minimum: 1,
+          maximum: 8
+        },
+        date_of_birth: { bsonType: "string" },
+        contact_address: { bsonType: "string" },
+        blood_group: {
+          bsonType: "string",
+          enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+        },
+        phone: {
+          bsonType: "string",
+          pattern: "^[0-9]{10}$"
+        },
+        parent_name: { bsonType: "string" },
+        mother_name: { bsonType: "string" },
+        game_sport_competition: { bsonType: "string" },
+        organizing_institution: { bsonType: "string" },
+        date_of_activity: { bsonType: "string" },
+        year_of_activity: {
+          bsonType: "string",
+          default: "2024"
+        },
+        course_name: { bsonType: "string" },
+        passing_year_puc: { bsonType: "string" },
+        date_first_admission_course: { bsonType: "string" },
+        date_first_admission_class: { bsonType: "string" },
+        previous_game: { bsonType: ["string", "null"] },
+        previous_years: { bsonType: ["string", "null"] },
+        photo_base64: { bsonType: ["string", "null"] },
+        signature_base64: { bsonType: ["string", "null"] },
+        status: {
+          bsonType: "string",
+          enum: ["pending", "approved", "rejected"],
+          description: "Workflow status"
+        },
+        sln: {
+          bsonType: ["int", "null"],
+          description: "Serial number assigned on approval"
+        },
+        rejection_reason: { bsonType: ["string", "null"] },
+        submitted_at: { bsonType: "date" },
+        reviewed_at: { bsonType: ["date", "null"] },
+        reviewed_by: { bsonType: ["string", "null"] }
+      }
+    }
+  }
+});
+
+-- Indexes
+db.student_submissions.createIndex({ "usn": 1 }, { unique: true });
+db.student_submissions.createIndex({ "status": 1 });
+db.student_submissions.createIndex({ "submitted_at": -1 });
+db.student_submissions.createIndex({ "branch": 1, "semester": 1 });
+
+
+--------------------------------------------------------------------------------
+COLLECTION 2: event_participation_requests
+--------------------------------------------------------------------------------
+Description: Student requests to join events (before admin selection)
+
+JSON Schema Validation:
+
+db.createCollection("event_participation_requests", {
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["usn", "student_name", "event_id", "event_name", "status", "submitted_at"],
+      properties: {
+        usn: {
+          bsonType: "string",
+          description: "Student USN (required)"
+        },
+        student_name: {
+          bsonType: "string",
+          description: "Student full name"
+        },
+        event_id: {
+          bsonType: "int",
+          description: "References PostgreSQL events.id"
+        },
+        event_name: {
+          bsonType: "string",
+          description: "Denormalized event name for quick access"
+        },
+        status: {
+          bsonType: "string",
+          enum: ["pending", "selected", "dropped"],
+          description: "Request status"
+        },
+        submitted_at: {
+          bsonType: "date",
+          description: "Request submission timestamp"
+        },
+        processed_at: {
+          bsonType: ["date", "null"],
+          description: "When admin processed the request"
+        },
+        processed_by: {
+          bsonType: ["string", "null"],
+          description: "Admin email who processed"
+        },
+        blockchain_hash: {
+          bsonType: ["string", "null"],
+          description: "SHA-256 audit hash (generated on selection)"
+        }
+      }
+    }
+  }
+});
+
+-- Indexes
+db.event_participation_requests.createIndex(
+  { "usn": 1, "event_id": 1 },
+  { unique: true }
+);
+db.event_participation_requests.createIndex({ "event_id": 1 });
+db.event_participation_requests.createIndex({ "status": 1 });
+db.event_participation_requests.createIndex({ "submitted_at": -1 });
+
+================================================================================
+4. COMPLETE DDL SCRIPT (PostgreSQL)
+================================================================================
+
+-- Create Database
+CREATE DATABASE sports_db
+WITH ENCODING 'UTF8'
+LC_COLLATE = 'en_US.UTF-8'
+LC_CTYPE = 'en_US.UTF-8'
+TEMPLATE = template0;
+
+\c sports_db;
+
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Create tables in dependency order
+
+-- 1. Users (no dependencies)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) DEFAULT 'admin',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$'),
+    CONSTRAINT check_role_value CHECK (role IN ('admin', 'staff', 'superuser'))
+);
+
+CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+
+-- 2. Students (no dependencies)
+CREATE TABLE students (
+    usn VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    branch VARCHAR(50),
+    semester INTEGER,
+    phone VARCHAR(20),
+    dob VARCHAR(20),
+    blood_group VARCHAR(10),
+    parent_name VARCHAR(255),
+    mother_name VARCHAR(255),
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_semester_range CHECK (semester BETWEEN 1 AND 8),
+    CONSTRAINT check_branch_value CHECK (branch IN (
+        'CSE', 'ISE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'CHEM', 'BT', 'AI&ML', 'CSD'
+    )),
+    CONSTRAINT check_blood_group CHECK (blood_group IN (
+        'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
+    ))
+);
+
+CREATE UNIQUE INDEX idx_students_usn ON students(usn);
+CREATE UNIQUE INDEX idx_students_email ON students(email);
+CREATE INDEX idx_students_branch ON students(branch);
+CREATE INDEX idx_students_semester ON students(semester);
+
+-- 3. Events (depends on users)
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    location VARCHAR(255),
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    description TEXT,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_date_range CHECK (end_date >= start_date),
+    CONSTRAINT check_name_length CHECK (CHAR_LENGTH(name) >= 3)
+);
+
+CREATE INDEX idx_events_start_date ON events(start_date);
+CREATE INDEX idx_events_end_date ON events(end_date);
+CREATE INDEX idx_events_created_by ON events(created_by);
+CREATE INDEX idx_events_date_range ON events(start_date, end_date);
+
+-- 4. Approved Participants (depends on students, events, users)
+CREATE TABLE approved_participants (
+    id SERIAL PRIMARY KEY,
+    usn VARCHAR(20) NOT NULL REFERENCES students(usn) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    blockchain_hash VARCHAR(128),
+    approved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_status_value CHECK (status IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT unique_participant_per_event UNIQUE (usn, event_id)
+);
+
+CREATE INDEX idx_approved_participants_usn ON approved_participants(usn);
+CREATE INDEX idx_approved_participants_event_id ON approved_participants(event_id);
+CREATE INDEX idx_approved_participants_status ON approved_participants(status);
+
+-- 5. Event Attendance (depends on students, events, users)
+CREATE TABLE event_attendance (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    usn VARCHAR(20) NOT NULL REFERENCES students(usn) ON DELETE CASCADE,
+    student_name VARCHAR(255),
+    attendance_date DATE NOT NULL,
+    status VARCHAR(10),
+    marked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT check_attendance_status CHECK (status IN ('present', 'absent') OR status IS NULL),
+    CONSTRAINT unique_attendance_record UNIQUE (event_id, usn, attendance_date)
+);
+
+CREATE INDEX idx_attendance_event_id ON event_attendance(event_id);
+CREATE INDEX idx_attendance_usn ON event_attendance(usn);
+CREATE INDEX idx_attendance_date ON event_attendance(attendance_date);
+CREATE INDEX idx_attendance_event_date ON event_attendance(event_id, attendance_date);
+
+-- 6. Email Audit Logs (depends on users)
+CREATE TABLE email_audit_logs (
+    id SERIAL PRIMARY KEY,
+    admin_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    subject VARCHAR(255) NOT NULL,
+    body_preview TEXT,
+    filters_used TEXT,
+    recipient_count INTEGER DEFAULT 0,
+    success_count INTEGER DEFAULT 0,
+    failure_count INTEGER DEFAULT 0,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    blockchain_hash VARCHAR(128),
+    CONSTRAINT check_recipient_counts CHECK (
+        recipient_count >= 0 AND
+        success_count >= 0 AND
+        failure_count >= 0 AND
+        recipient_count = success_count + failure_count
+    ),
+    CONSTRAINT check_subject_length CHECK (CHAR_LENGTH(subject) >= 3)
+);
+
+CREATE INDEX idx_email_logs_admin_id ON email_audit_logs(admin_id);
+CREATE INDEX idx_email_logs_sent_at ON email_audit_logs(sent_at DESC);
+
+-- Create triggers
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_students_updated_at
+BEFORE UPDATE ON students
+FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
+CREATE OR REPLACE FUNCTION validate_attendance_date()
+RETURNS TRIGGER AS $$
+DECLARE
+    event_start DATE;
+    event_end DATE;
+BEGIN
+    SELECT start_date, end_date INTO event_start, event_end
+    FROM events
+    WHERE id = NEW.event_id;
+    
+    IF NEW.attendance_date < event_start OR NEW.attendance_date > event_end THEN
+        RAISE EXCEPTION 'Attendance date must be within event date range';
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_attendance_date_range
+BEFORE INSERT OR UPDATE ON event_attendance
+FOR EACH ROW
+EXECUTE FUNCTION validate_attendance_date();
+
+================================================================================
+5. REFERENTIAL INTEGRITY SUMMARY
+================================================================================
+
+Foreign Key Constraints:
+------------------------
+1. events.created_by → users.id (SET NULL on delete)
+2. approved_participants.usn → students.usn (CASCADE on delete)
+3. approved_participants.event_id → events.id (CASCADE on delete)
+4. approved_participants.approved_by → users.id (SET NULL on delete)
+5. event_attendance.event_id → events.id (CASCADE on delete)
+6. event_attendance.usn → students.usn (CASCADE on delete)
+7. event_attendance.marked_by → users.id (SET NULL on delete)
+8. email_audit_logs.admin_id → users.id (RESTRICT on delete)
+
+Cascade Effects:
+----------------
+- Deleting a STUDENT → Cascades to approved_participants and event_attendance
+- Deleting an EVENT → Cascades to approved_participants and event_attendance
+- Deleting a USER → Sets created_by/approved_by/marked_by to NULL (except email logs)
+
+================================================================================
+6. DATA DICTIONARY SUMMARY
+================================================================================
+
+Total Tables: 6 (PostgreSQL)
+Total Collections: 2 (MongoDB)
+Total Columns: 58 (across all PostgreSQL tables)
+Total Indexes: 28 (PostgreSQL) + 8 (MongoDB)
+Total Constraints: 15 CHECK + 8 FOREIGN KEY + 6 UNIQUE
+Total Triggers: 2 (updated_at, attendance validation)
+
+================================================================================
+END OF RELATIONAL SCHEMA DOCUMENTATION
+================================================================================

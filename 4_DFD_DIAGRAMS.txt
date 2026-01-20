@@ -1,0 +1,794 @@
+================================================================================
+                    DATA FLOW DIAGRAMS (DFD) DOCUMENTATION
+           RVCE SPORTS MANAGEMENT SYSTEM - LEVELS 0, 1, AND 2
+================================================================================
+
+1. INTRODUCTION TO DATA FLOW DIAGRAMS
+--------------------------------------
+Data Flow Diagrams (DFDs) provide a visual representation of how data moves
+through the system, showing processes, data stores, external entities, and
+the flow of information between them.
+
+NOTATION KEY:
+=============
+┌─────────┐
+│ Process │  = Rectangle: Process/Function that transforms data
+└─────────┘
+
+┌═════════┐
+║External ║  = Double rectangle: External entity (user, system)
+║ Entity  ║
+└═════════┘
+
+│─────────│
+│Data Store│ = Open rectangle: Database/File storage
+│─────────│
+
+   ───▶     = Arrow: Data flow direction
+
+LEVELS OF DFD:
+--------------
+Level 0 (Context Diagram): Highest level overview - system as single process
+Level 1: Major subsystems and their interactions
+Level 2: Detailed breakdown of individual subsystems
+
+================================================================================
+2. LEVEL 0 DFD (CONTEXT DIAGRAM)
+================================================================================
+
+PURPOSE: Shows the entire system as a single process with external entities
+
+                              RVCE SPORTS MANAGEMENT SYSTEM
+                                   (LEVEL 0 DFD)
+
+┌═══════════════┐                                              ┌═══════════════┐
+║               ║      Login Credentials                       ║               ║
+║    STUDENT    ║──────────────────────────────────▶           ║     ADMIN     ║
+║ (External)    ║                                   │          ║  (External)   ║
+║               ║                                   │          ║               ║
+║               ║      Registration Form            │          ║               ║
+║               ║──────────────────────────┐        │          ║               ║
+║               ║                          │        │          ║               ║
+║               ║      Approval Status     ▼        ▼          ║               ║
+║               ║◀─────────────────     ┌──────────────────┐  ║               ║
+║               ║                       │                  │  ║               ║
+║               ║      Event List       │   RVCE SPORTS    │  ║               ║
+║               ║◀──────────────────    │   MANAGEMENT     │  ║               ║
+║               ║                       │     SYSTEM       │  ║               ║
+║               ║   Participation Req   │    (Process 0)   │  ║               ║
+║               ║──────────────────────▶│                  │  ║               ║
+║               ║                       │                  │──║──▶ Dashboard  ║
+║               ║   Selection Status    │                  │  ║               ║
+║               ║◀──────────────────────│                  │  ║   Analytics   ║
+║               ║                       │                  │◀─║────Reports    ║
+└═══════════════┘                       │                  │  ║               ║
+                                        └──────────────────┘  ║   Approval    ║
+                                                 │             ║   Actions     ║
+                                                 │             ║               ║
+                                                 │             ║   Email Send  ║
+                                                 │             ║               ║
+                                                 ▼             └═══════════════┘
+                                        ┌═══════════════┐
+                                        ║    EMAIL      ║
+                                        ║    SYSTEM     ║◀───Email Notifications
+                                        ║  (External)   ║
+                                        └═══════════════┘
+                                                 │
+                                                 ▼
+                                           Email Delivery
+                                           to Recipients
+
+EXTERNAL ENTITIES:
+------------------
+1. STUDENT: External user interacting via web browser (Student Portal)
+2. ADMIN: System administrators managing the platform (Admin Portal)
+3. EMAIL SYSTEM: SMTP server for sending notifications (External service)
+
+MAJOR DATA FLOWS:
+-----------------
+FROM STUDENT:
+  - Login Credentials (Google OAuth)
+  - Registration Form (Personal details, documents)
+  - Event Participation Requests
+
+TO STUDENT:
+  - Approval Status (Approved/Rejected/Pending)
+  - Event List (Available competitions)
+  - Selection Status (Selected/Dropped for events)
+  - Email Notifications
+
+FROM ADMIN:
+  - Login Credentials (Email/Password)
+  - Event Creation Data
+  - Approval/Rejection Actions
+  - Attendance Marking
+  - Bulk Email Content
+
+TO ADMIN:
+  - Dashboard Statistics
+  - Analytics Reports
+  - Pending Approvals List
+  - Student Submissions
+
+TO EMAIL SYSTEM:
+  - Bulk email content and recipient lists
+
+FROM EMAIL SYSTEM:
+  - Delivery status and receipts
+
+
+================================================================================
+3. LEVEL 1 DFD (MAJOR SUBSYSTEMS)
+================================================================================
+
+PURPOSE: Breaks down the system into major functional modules
+
+                    RVCE SPORTS MANAGEMENT SYSTEM (LEVEL 1 DFD)
+
+┌═══════════┐
+║  STUDENT  ║
+║           ║
+└═══════════┘
+     │  ▲
+     │  │
+     │  │ Approval Status
+     │  │
+     ▼  │
+┌─────────────────────┐
+│  1.0                │         │──────────────│
+│  STUDENT            │────────▶│ Submissions  │
+│  REGISTRATION       │         │  (MongoDB)   │
+│  MANAGEMENT         │         │──────────────│
+└─────────────────────┘
+           │
+           │ Approved Data
+           ▼
+     │──────────────│
+     │  Students    │
+     │ (PostgreSQL) │◀──────────────────────┐
+     │──────────────│                       │
+           ▲                                │
+           │                                │
+┌═══════════┐    Login                     │
+║   ADMIN   ║    Token                     │
+║           ║──────────▼─────────────       │
+└═══════════┘    ┌─────────────────┐       │
+     │           │  2.0            │       │
+     │           │  AUTHENTICATION │       │
+     │           │  & AUTHORIZATION│       │
+     │           └─────────────────┘       │
+     │                  │                  │
+     │                  ▼                  │
+     │           │─────────────│           │
+     │           │   Users     │           │
+     │           │(PostgreSQL) │           │
+     │           │─────────────│           │
+     │                                     │
+     │  Event Details                     │
+     └────────▼──────────────              │
+          ┌─────────────────┐              │
+          │  3.0            │              │
+          │  EVENT          │              │
+          │  MANAGEMENT     │              │
+          └─────────────────┘              │
+                 │                         │
+                 ▼                         │
+          │──────────────│                 │
+          │    Events    │                 │
+          │ (PostgreSQL) │                 │
+          │──────────────│                 │
+                 │                         │
+                 │                         │
+┌═══════════┐    │                         │
+║  STUDENT  ║    │ Event List              │
+║           ║◀───┘                         │
+└═══════════┘                              │
+     │                                     │
+     │ Participation Request               │
+     └────────▼──────────────              │
+          ┌─────────────────┐              │
+          │  4.0            │              │
+          │  PARTICIPATION  │              │
+          │  MANAGEMENT     │              │
+          └─────────────────┘              │
+                 │                         │
+                 ▼                         │
+      │────────────────────────│           │
+      │ Participation Requests │           │
+      │      (MongoDB)         │           │
+      │────────────────────────│           │
+                 │                         │
+                 │ Selection               │
+                 ▼                         │
+      │────────────────────────│           │
+      │ Approved Participants  │───────────┘
+      │     (PostgreSQL)       │
+      │────────────────────────│
+                 │
+                 │
+┌═══════════┐    │
+║   ADMIN   ║    │
+║           ║────┼──── Attendance Data
+└═══════════┘    │
+                 ▼
+          ┌─────────────────┐
+          │  5.0            │
+          │  ATTENDANCE     │
+          │  TRACKING       │
+          └─────────────────┘
+                 │
+                 ▼
+      │────────────────────────│
+      │  Event Attendance      │
+      │    (PostgreSQL)        │
+      │────────────────────────│
+
+
+┌═══════════┐
+║   ADMIN   ║──── Email Content
+║           ║
+└═══════════┘
+     │
+     ▼
+┌─────────────────┐          │─────────────────│
+│  6.0            │─────────▶│ Email Audit Logs│
+│  EMAIL          │          │   (PostgreSQL)  │
+│  COMMUNICATION  │          │─────────────────│
+└─────────────────┘
+     │
+     │ Email Request
+     ▼
+┌═══════════┐
+║   SMTP    ║
+║  SERVER   ║
+└═══════════┘
+
+┌═══════════┐
+║   ADMIN   ║──── Request Analytics
+║           ║
+└═══════════┘
+     │
+     ▼
+┌─────────────────┐
+│  7.0            │
+│  ANALYTICS &    │
+│  REPORTING      │───────▶ Charts & Metrics
+└─────────────────┘
+     │
+     │ Query Data
+     ▼
+│────────────────────────│
+│   All Data Stores      │
+│  (PostgreSQL+MongoDB)  │
+│────────────────────────│
+
+
+LEVEL 1 PROCESSES:
+------------------
+
+1.0 STUDENT REGISTRATION MANAGEMENT
+   - Input: Student registration forms (from Student)
+   - Output: Approval/rejection status (to Student)
+   - Data Stores: student_submissions (MongoDB), students (PostgreSQL)
+
+2.0 AUTHENTICATION & AUTHORIZATION
+   - Input: Login credentials (from Student/Admin)
+   - Output: JWT tokens, session data
+   - Data Stores: users (PostgreSQL)
+
+3.0 EVENT MANAGEMENT
+   - Input: Event details (from Admin)
+   - Output: Event list (to Student/Admin)
+   - Data Stores: events (PostgreSQL)
+
+4.0 PARTICIPATION MANAGEMENT
+   - Input: Participation requests (from Student), Selection actions (from Admin)
+   - Output: Selection status (to Student)
+   - Data Stores: event_participation_requests (MongoDB), approved_participants (PostgreSQL)
+
+5.0 ATTENDANCE TRACKING
+   - Input: Attendance records (from Admin)
+   - Output: Attendance reports (to Admin)
+   - Data Stores: event_attendance (PostgreSQL)
+
+6.0 EMAIL COMMUNICATION
+   - Input: Email content and filters (from Admin)
+   - Output: Email delivery (via SMTP), Audit logs
+   - Data Stores: email_audit_logs (PostgreSQL)
+
+7.0 ANALYTICS & REPORTING
+   - Input: Analytics requests (from Admin)
+   - Output: Dashboard metrics, charts, trends
+   - Data Stores: All database tables (read-only queries)
+
+
+================================================================================
+4. LEVEL 2 DFD - STUDENT REGISTRATION MODULE (1.0)
+================================================================================
+
+DETAILED BREAKDOWN OF STUDENT REGISTRATION MANAGEMENT
+
+┌═══════════┐
+║  STUDENT  ║
+║           ║
+└═══════════┘
+     │
+     │ Google OAuth Token
+     ▼
+┌──────────────────────┐
+│ 1.1                  │
+│ AUTHENTICATE STUDENT │
+│ (Firebase)           │
+└──────────────────────┘
+     │
+     │ Verified Identity
+     ▼
+┌──────────────────────┐      │────────────────────│
+│ 1.2                  │─────▶│ student_submissions│
+│ SUBMIT REGISTRATION  │      │     (MongoDB)      │
+│ FORM                 │      │────────────────────│
+└──────────────────────┘
+     │
+     │ Submission Confirmation
+     ▼
+┌═══════════┐
+║  STUDENT  ║
+└═══════════┘
+
+         ┌─────────────────────┐
+┌════════│      ADMIN SIDE     │═════════┐
+│        └─────────────────────┘         │
+│                                        │
+│ ┌═══════════┐                         │
+│ ║   ADMIN   ║                         │
+│ ║           ║                         │
+│ └═══════════┘                         │
+│      │                                │
+│      │ Request Pending List           │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 1.3                  │              │
+│ │ RETRIEVE PENDING     │◀─────────────┼──│student_submissions│
+│ │ SUBMISSIONS          │              │  │    (MongoDB)      │
+│ └──────────────────────┘              │  │────────────────│
+│      │                                │
+│      │ Submission Details             │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 1.4                  │              │
+│ │ VALIDATE & REVIEW    │              │
+│ │ SUBMISSION           │              │
+│ └──────────────────────┘              │
+│      │                                │
+│      │ Approval/Rejection Decision    │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 1.5                  │              │
+│ │ PROCESS APPROVAL     │              │
+│ │                      │              │
+│ └──────────────────────┘              │
+│      │         │                      │
+│      │         └──────────────────────┼──▶│student_submissions│
+│      │          Update Status         │   │  (MongoDB)        │
+│      │                                │   │────────────────│
+│      │ Approved Data                  │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 1.6                  │              │
+│ │ MIGRATE TO           │──────────────┼──▶│   students   │
+│ │ POSTGRESQL           │              │   │ (PostgreSQL) │
+│ └──────────────────────┘              │   │──────────────│
+│      │                                │
+│      │ Notification Trigger           │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 1.7                  │              │
+│ │ SEND EMAIL           │──────────────┼──▶ SMTP Server
+│ │ NOTIFICATION         │              │
+│ └──────────────────────┘              │
+│                                       │
+└═══════════════════════════════════════┘
+
+SUB-PROCESSES:
+
+1.1 AUTHENTICATE STUDENT
+   - Input: Google OAuth token (from Student)
+   - Process: Verify token with Firebase, check @rvce.edu.in domain
+   - Output: Verified student identity
+
+1.2 SUBMIT REGISTRATION FORM
+   - Input: Student details, Base64 documents
+   - Process: Validate format, convert files, create MongoDB document
+   - Output: Submission ID, confirmation message
+
+1.3 RETRIEVE PENDING SUBMISSIONS
+   - Input: Admin request for pending list
+   - Process: Query MongoDB where status='pending'
+   - Output: List of pending submissions with metadata
+
+1.4 VALIDATE & REVIEW SUBMISSION
+   - Input: Submission details
+   - Process: Admin manually reviews data, documents
+   - Output: Approval/rejection decision
+
+1.5 PROCESS APPROVAL
+   - Input: Approval decision
+   - Process: Update MongoDB status to 'approved' or 'rejected'
+   - Output: Updated submission record
+
+1.6 MIGRATE TO POSTGRESQL
+   - Input: Approved submission data
+   - Process: Extract fields, insert into students table
+   - Output: New student record in PostgreSQL
+
+1.7 SEND EMAIL NOTIFICATION
+   - Input: Approval result, student email
+   - Process: Generate email content, call SMTP service
+   - Output: Email sent to student
+
+
+================================================================================
+5. LEVEL 2 DFD - EVENT PARTICIPATION MODULE (4.0)
+================================================================================
+
+DETAILED BREAKDOWN OF PARTICIPATION MANAGEMENT
+
+┌═══════════┐
+║  STUDENT  ║
+║           ║
+└═══════════┘
+     │
+     │ View Events Request
+     ▼
+┌──────────────────────┐         │─────────────│
+│ 4.1                  │────────▶│   events    │
+│ DISPLAY AVAILABLE    │◀────────│(PostgreSQL) │
+│ EVENTS               │         │─────────────│
+└──────────────────────┘
+     │
+     │ Event List
+     ▼
+┌═══════════┐
+║  STUDENT  ║
+║           ║
+└═══════════┘
+     │
+     │ Participation Request
+     ▼
+┌──────────────────────┐
+│ 4.2                  │         │─────────────────────│
+│ VALIDATE ELIGIBILITY │────────▶│ student_submissions │
+│                      │◀────────│     (MongoDB)       │
+└──────────────────────┘         │─────────────────────│
+     │                              Check if approved
+     │ Eligibility Confirmed
+     ▼
+┌──────────────────────┐
+│ 4.3                  │         │──────────────────────────│
+│ CREATE PARTICIPATION │────────▶│ event_participation_     │
+│ REQUEST              │         │     requests (MongoDB)   │
+└──────────────────────┘         │──────────────────────────│
+     │
+     │ Confirmation
+     ▼
+┌═══════════┐
+║  STUDENT  ║
+└═══════════┘
+
+
+         ┌─────────────────────┐
+┌════════│      ADMIN SIDE     │═════════┐
+│        └─────────────────────┘         │
+│                                        │
+│ ┌═══════════┐                         │
+│ ║   ADMIN   ║                         │
+│ ║           ║                         │
+│ └═══════════┘                         │
+│      │                                │
+│      │ View Event Requests            │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.4                  │              │  │──────────────────────────│
+│ │ RETRIEVE REQUESTS    │◀─────────────┼──│ event_participation_     │
+│ │ FOR EVENT            │              │  │   requests (MongoDB)     │
+│ └──────────────────────┘              │  │──────────────────────────│
+│      │                                │
+│      │ Request List                   │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.5                  │              │
+│ │ SELECT/DROP          │              │
+│ │ PARTICIPANTS         │              │
+│ └──────────────────────┘              │
+│      │                                │
+│      │ Selection Decision             │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.6                  │              │
+│ │ GENERATE BLOCKCHAIN  │              │
+│ │ HASH                 │              │
+│ └──────────────────────┘              │
+│      │                                │
+│      │ Hash Value                     │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.7                  │              │  │──────────────────────────│
+│ │ UPDATE REQUEST       │──────────────┼─▶│ event_participation_     │
+│ │ STATUS               │              │  │   requests (MongoDB)     │
+│ └──────────────────────┘              │  │──────────────────────────│
+│      │                                │
+│      │ (If selected)                  │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.8                  │              │  │──────────────────────│
+│ │ CREATE APPROVED      │──────────────┼─▶│ approved_participants│
+│ │ PARTICIPANT RECORD   │              │  │   (PostgreSQL)       │
+│ └──────────────────────┘              │  │──────────────────────│
+│      │                                │
+│      │ Notification Data              │
+│      ▼                                │
+│ ┌──────────────────────┐              │
+│ │ 4.9                  │──────────────┼──▶ SMTP Server
+│ │ NOTIFY STUDENT       │              │
+│ └──────────────────────┘              │
+│                                       │
+└═══════════════════════════════════════┘
+
+SUB-PROCESSES:
+
+4.1 DISPLAY AVAILABLE EVENTS
+   - Input: Student request
+   - Process: Query events table for upcoming events
+   - Output: Event list with details
+
+4.2 VALIDATE ELIGIBILITY
+   - Input: Student ID, Event ID
+   - Process: Check if student is approved in student_submissions
+   - Output: Eligibility status
+
+4.3 CREATE PARTICIPATION REQUEST
+   - Input: Student USN, Event ID
+   - Process: Create document in event_participation_requests
+   - Output: Request ID, pending status
+
+4.4 RETRIEVE REQUESTS FOR EVENT
+   - Input: Event ID, optional status filter
+   - Process: Query MongoDB for requests matching event
+   - Output: List of participation requests
+
+4.5 SELECT/DROP PARTICIPANTS
+   - Input: Request IDs, decision (selected/dropped)
+   - Process: Admin reviews and decides
+   - Output: Selection decisions
+
+4.6 GENERATE BLOCKCHAIN HASH
+   - Input: USN, Event ID, Admin ID, Timestamp
+   - Process: Compute SHA-256 hash
+   - Output: Cryptographic hash for audit
+
+4.7 UPDATE REQUEST STATUS
+   - Input: Request ID, new status, hash
+   - Process: Update MongoDB document
+   - Output: Updated request with blockchain hash
+
+4.8 CREATE APPROVED PARTICIPANT RECORD
+   - Input: Selected participant data
+   - Process: Insert record into PostgreSQL approved_participants
+   - Output: New approved participant record
+
+4.9 NOTIFY STUDENT
+   - Input: Selection result, student email
+   - Process: Generate email, send via SMTP
+   - Output: Email notification to student
+
+
+================================================================================
+6. LEVEL 2 DFD - ANALYTICS MODULE (7.0)
+================================================================================
+
+DETAILED BREAKDOWN OF ANALYTICS & REPORTING
+
+┌═══════════┐
+║   ADMIN   ║
+║           ║
+└═══════════┘
+     │
+     │ Request Dashboard
+     ▼
+┌──────────────────────┐
+│ 7.1                  │
+│ AGGREGATE KEY        │◀──────┐
+│ METRICS              │       │
+└──────────────────────┘       │
+     │                         │
+     │                    │─────────────────│
+     │                    │ All PostgreSQL  │
+     │                    │ & MongoDB Tables│
+     │                    │─────────────────│
+     │                         │
+     │ Raw Aggregate Data      │
+     ▼                         │
+┌──────────────────────┐       │
+│ 7.2                  │       │
+│ CALCULATE            │       │
+│ PARTICIPATION TRENDS │◀──────┤
+└──────────────────────┘       │
+     │                         │
+     │ Trend Data              │
+     ▼                         │
+┌──────────────────────┐       │
+│ 7.3                  │       │
+│ ANALYZE BRANCH/      │◀──────┤
+│ DEPARTMENT STATS     │       │
+└──────────────────────┘       │
+     │                         │
+     │ Department Stats        │
+     ▼                         │
+┌──────────────────────┐       │
+│ 7.4                  │       │
+│ COMPUTE ATTENDANCE   │◀──────┘
+│ RATES                │
+└──────────────────────┘
+     │
+     │ Attendance Metrics
+     ▼
+┌──────────────────────┐
+│ 7.5                  │
+│ FORMAT CHART DATA    │
+│ (Recharts)           │
+└──────────────────────┘
+     │
+     │ JSON Chart Data
+     ▼
+┌═══════════┐
+║   ADMIN   ║
+║ Dashboard ║
+└═══════════┘
+
+SUB-PROCESSES:
+
+7.1 AGGREGATE KEY METRICS
+   - Input: Dashboard request
+   - Process: COUNT queries on multiple tables
+   - Output: Total submissions, events, participants, attendance
+
+7.2 CALCULATE PARTICIPATION TRENDS
+   - Input: Date range filter
+   - Process: GROUP BY submitted_at, calculate counts over time
+   - Output: Time-series data for line charts
+
+7.3 ANALYZE BRANCH/DEPARTMENT STATS
+   - Input: Student records
+   - Process: GROUP BY branch, calculate participation percentages
+   - Output: Pie chart data for branch distribution
+
+7.4 COMPUTE ATTENDANCE RATES
+   - Input: Attendance records, event data
+   - Process: Calculate (present/total) percentages per event
+   - Output: Bar chart data for attendance rates
+
+7.5 FORMAT CHART DATA
+   - Input: Raw aggregated data
+   - Process: Transform to Recharts JSON format
+   - Output: Formatted JSON for frontend rendering
+
+
+================================================================================
+7. DATA FLOW SUMMARY
+================================================================================
+
+CRITICAL DATA PATHS:
+--------------------
+
+1. STUDENT ONBOARDING FLOW:
+   Student → Authentication → Registration Form → MongoDB →
+   Admin Review → Approval → PostgreSQL → Email Notification
+
+2. EVENT PARTICIPATION FLOW:
+   Admin Creates Event → PostgreSQL → Student Views Events →
+   Request to Join → MongoDB → Admin Selects → PostgreSQL →
+   Blockchain Hash → Email Notification
+
+3. ATTENDANCE FLOW:
+   Admin Opens Attendance → Load Participants → Mark Attendance →
+   PostgreSQL → Analytics Update
+
+4. EMAIL COMMUNICATION FLOW:
+   Admin Composes Email → Apply Filters → Query Students →
+   Send via SMTP → Log Audit Trail → PostgreSQL
+
+5. ANALYTICS FLOW:
+   Admin Request → Query All Databases → Aggregate Data →
+   Calculate Metrics → Format Charts → Render Dashboard
+
+
+DATA STORE ACCESS PATTERNS:
+----------------------------
+
+WRITE-HEAVY:
+- student_submissions (MongoDB): Continuous student registrations
+- event_participation_requests (MongoDB): High-volume participation requests
+- email_audit_logs (PostgreSQL): Every email logged
+
+READ-HEAVY:
+- events (PostgreSQL): Frequent queries by students
+- students (PostgreSQL): Name lookups, email filtering
+- Analytics queries: Cross-table aggregations
+
+HYBRID (Read/Write):
+- approved_participants (PostgreSQL): Frequent inserts, moderate reads
+- event_attendance (PostgreSQL): Daily writes, frequent reads for reports
+
+
+================================================================================
+8. DEPLOYMENT ARCHITECTURE DATA FLOWS
+================================================================================
+
+PRODUCTION DATA FLOW (Docker + Nginx + EC2):
+
+┌═══════════┐
+║  INTERNET ║
+║   USER    ║
+└═══════════┘
+     │
+     │ HTTPS Request (Port 443)
+     ▼
+┌─────────────────────────────────────────────┐
+│         AWS EC2 INSTANCE                    │
+│  ┌──────────────────────────────────────┐  │
+│  │  NGINX REVERSE PROXY (Docker)        │  │
+│  │  - SSL/TLS Termination               │  │
+│  │  - Load Balancing                    │  │
+│  │  - Static File Serving               │  │
+│  └──────────────────────────────────────┘  │
+│        │                                    │
+│        │ Route: /api/* → Backend            │
+│        │        /*     → Frontend           │
+│        ▼                                    │
+│  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  FRONTEND       │  │  BACKEND        │  │
+│  │  (React+Vite)   │  │  (FastAPI)      │  │
+│  │  Docker         │  │  Docker         │  │
+│  │  Container      │  │  Container      │  │
+│  └─────────────────┘  └─────────────────┘  │
+│                             │               │
+│                             │ SQL/NoSQL     │
+│                             ▼               │
+│  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  POSTGRESQL     │  │  MONGODB        │  │
+│  │  Docker         │  │  Docker/Atlas   │  │
+│  │  Container      │  │                 │  │
+│  │  + Volume       │  │                 │  │
+│  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────┘
+          │
+          │ SMTP (Port 587)
+          ▼
+    ┌═════════════┐
+    ║ GMAIL SMTP  ║
+    ║   SERVER    ║
+    └═════════════┘
+
+CONTAINER COMMUNICATION:
+- Frontend → Backend: HTTP (internal Docker network)
+- Backend → PostgreSQL: Port 5432 (internal)
+- Backend → MongoDB: Port 27017 (internal) OR Atlas URI
+- Backend → SMTP: Port 587 (external)
+- Nginx → Frontend: Port 5173 (internal)
+- Nginx → Backend: Port 8000 (internal)
+
+DATA PERSISTENCE:
+- PostgreSQL: Docker named volume mounted at /var/lib/postgresql/data
+- MongoDB: Docker named volume OR MongoDB Atlas cloud storage
+- Backend logs: Docker volume at /app/logs
+- Static files: Nginx volume at /usr/share/nginx/html
+
+BACKUP DATA FLOW:
+- Scheduled cron job → pg_dump → S3 bucket
+- MongoDB backup → mongodump → S3 bucket
+- Retention: 30 days
+
+
+================================================================================
+END OF DATA FLOW DIAGRAM DOCUMENTATION
+================================================================================================

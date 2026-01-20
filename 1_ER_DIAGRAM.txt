@@ -1,0 +1,642 @@
+================================================================================
+                    ENTITY-RELATIONSHIP (ER) DIAGRAM
+           RVCE SPORTS MANAGEMENT SYSTEM - DETAILED DESCRIPTION
+================================================================================
+
+1. OVERVIEW
+-----------
+The RVCE Sports Management System employs a HYBRID DATABASE ARCHITECTURE:
+- PostgreSQL (Relational): For structured, normalized, transactional data
+- MongoDB (NoSQL/Document): For flexible, high-volume, semi-structured data
+
+This ER diagram represents the complete data model including entities, attributes,
+relationships, cardinalities, and constraints across both database systems.
+
+================================================================================
+2. ENTITIES (TABLES/COLLECTIONS)
+================================================================================
+
+A. POSTGRESQL ENTITIES (Relational Database)
+---------------------------------------------
+
+ENTITY 1: USER
+--------------
+Description: Stores admin/staff credentials with secure authentication
+Primary Key: id (Integer, Auto-increment)
+Attributes:
+  - id (PK): Integer, Auto-increment, NOT NULL
+  - email: String(255), UNIQUE, NOT NULL, Indexed
+  - password_hash: String(255), NOT NULL (bcrypt hashed)
+  - role: String(50), DEFAULT 'admin'
+  - created_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+
+Relationships:
+  - One-to-Many → EVENT (A user creates multiple events)
+  - One-to-Many → APPROVED_PARTICIPANT (A user approves multiple participants)
+  - One-to-Many → EMAIL_AUDIT_LOG (A user sends multiple emails)
+  - One-to-Many → EVENT_ATTENDANCE (A user marks attendance for multiple records)
+
+Business Rules:
+  - Email must be unique across all users
+  - Password stored as bcrypt hash (never plaintext)
+  - Only users with role='admin' can access admin endpoints
+
+
+ENTITY 2: STUDENT
+-----------------
+Description: Approved student profiles (moved from MongoDB after admin approval)
+Primary Key: usn (String, University Seat Number)
+Attributes:
+  - usn (PK): String(20), NOT NULL, Indexed, UNIQUE
+  - name: String(255), NOT NULL
+  - email: String(255), UNIQUE, Indexed
+  - branch: String(50) [e.g., CSE, ECE, MECH]
+  - semester: Integer [1-8]
+  - phone: String(20)
+  - dob: String(20) [Date of Birth]
+  - blood_group: String(10) [e.g., A+, O-, AB+]
+  - parent_name: String(255)
+  - mother_name: String(255)
+  - address: Text
+  - created_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+  - updated_at: DateTime, ON UPDATE CURRENT_TIMESTAMP
+
+Relationships:
+  - One-to-Many → APPROVED_PARTICIPANT (Implicit via usn field)
+  - One-to-Many → EVENT_ATTENDANCE (Implicit via usn field)
+
+Business Rules:
+  - USN is unique and immutable once assigned
+  - Student can only exist here after approval by admin
+  - Email must be unique (one student = one email)
+  - USN format validation enforced at application layer
+
+
+ENTITY 3: EVENT
+---------------
+Description: Sports events/competitions/tournaments
+Primary Key: id (Integer, Auto-increment)
+Attributes:
+  - id (PK): Integer, Auto-increment, NOT NULL
+  - name: String(255), NOT NULL
+  - location: String(255)
+  - start_date: Date, NOT NULL
+  - end_date: Date, NOT NULL
+  - description: Text
+  - created_by (FK): Integer, FOREIGN KEY → USER(id)
+  - created_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+
+Relationships:
+  - Many-to-One → USER (Each event is created by one admin)
+  - One-to-Many → APPROVED_PARTICIPANT (An event has multiple participants)
+  - One-to-Many → EVENT_ATTENDANCE (An event has multiple attendance records)
+
+Business Rules:
+  - end_date must be >= start_date
+  - Students cannot register for events that have already ended
+  - created_by links to the admin who created the event
+
+
+ENTITY 4: APPROVED_PARTICIPANT
+------------------------------
+Description: Final roster of selected participants for events
+Primary Key: id (Integer, Auto-increment)
+Attributes:
+  - id (PK): Integer, Auto-increment, NOT NULL
+  - usn: String(20), NOT NULL, Indexed
+  - event_id (FK): Integer, FOREIGN KEY → EVENT(id), NOT NULL
+  - approved_by (FK): Integer, FOREIGN KEY → USER(id)
+  - status: String(20), DEFAULT 'pending' [pending, approved, rejected]
+  - blockchain_hash: String(128) [SHA-256 audit trail]
+  - approved_at: DateTime
+  - created_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+
+Relationships:
+  - Many-to-One → EVENT (Multiple participants per event)
+  - Many-to-One → USER (Multiple approvals by one admin)
+  - Implicit link to STUDENT via usn field
+
+Business Rules:
+  - Composite UNIQUE constraint on (usn, event_id) - no duplicate participation
+  - blockchain_hash generated when status changes to 'approved'
+  - approved_by records which admin made the selection
+  - Triggers email notification to student upon approval
+
+
+ENTITY 5: EVENT_ATTENDANCE
+--------------------------
+Description: Daily attendance tracking for event participants
+Primary Key: id (Integer, Auto-increment)
+Attributes:
+  - id (PK): Integer, Auto-increment, NOT NULL
+  - event_id (FK): Integer, FOREIGN KEY → EVENT(id), NOT NULL
+  - usn: String(20), NOT NULL, Indexed
+  - student_name: String(255) [Denormalized for quick display]
+  - attendance_date: Date, NOT NULL
+  - status: String(10) [present, absent, or NULL]
+  - marked_by (FK): Integer, FOREIGN KEY → USER(id)
+  - marked_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+
+Relationships:
+  - Many-to-One → EVENT (Multiple attendance records per event)
+  - Many-to-One → USER (Multiple attendance marks by one admin)
+  - Implicit link to STUDENT via usn field
+
+Business Rules:
+  - Composite UNIQUE constraint on (event_id, usn, attendance_date)
+  - student_name is denormalized from STUDENT table for performance
+  - Only students in APPROVED_PARTICIPANT can have attendance records
+  - Attendance can only be marked for dates within event's start/end range
+
+
+ENTITY 6: EMAIL_AUDIT_LOG
+-------------------------
+Description: Comprehensive log of all bulk emails sent by admins
+Primary Key: id (Integer, Auto-increment)
+Attributes:
+  - id (PK): Integer, Auto-increment, NOT NULL
+  - admin_id (FK): Integer, FOREIGN KEY → USER(id), NOT NULL
+  - subject: String(255), NOT NULL
+  - body_preview: Text [First 500 chars of email body]
+  - filters_used: Text [JSON string of applied filters]
+  - recipient_count: Integer [Total recipients targeted]
+  - success_count: Integer, DEFAULT 0
+  - failure_count: Integer, DEFAULT 0
+  - sent_at: DateTime, DEFAULT CURRENT_TIMESTAMP
+  - blockchain_hash: String(128) [Audit integrity hash]
+
+Relationships:
+  - Many-to-One → USER (Multiple emails sent by one admin)
+
+Business Rules:
+  - filters_used stores JSON like: {"branch": "CSE", "semester": 3}
+  - recipient_count = success_count + failure_count
+  - blockchain_hash ensures email log cannot be tampered
+  - Provides complete audit trail for compliance
+
+
+B. MONGODB COLLECTIONS (NoSQL Database)
+----------------------------------------
+
+COLLECTION 1: STUDENT_SUBMISSION
+--------------------------------
+Description: Raw student registration forms (pending approval pipeline)
+Document Structure (JSON Schema):
+
+{
+  "_id": ObjectId (Auto-generated by MongoDB),
+  
+  // Event/Activity Information
+  "game_sport_competition": String (REQUIRED),
+  "organizing_institution": String (REQUIRED),
+  "date_of_activity": String (REQUIRED),
+  "year_of_activity": String (DEFAULT: "2024"),
+  
+  // Student Personal Information
+  "sln": Integer (Optional, assigned on approval),
+  "student_name": String (REQUIRED),
+  "usn": String (REQUIRED, Indexed),
+  "parent_name": String (REQUIRED),
+  "mother_name": String (REQUIRED),
+  "semester": String (REQUIRED),
+  "branch": String (REQUIRED),
+  "date_of_birth": String (REQUIRED),
+  "blood_group": String (REQUIRED),
+  "contact_address": String (REQUIRED),
+  "phone": String (REQUIRED),
+  
+  // Academic Information
+  "course_name": String (REQUIRED),
+  "passing_year_puc": String (REQUIRED),
+  "date_first_admission_course": String (REQUIRED),
+  "date_first_admission_class": String (REQUIRED),
+  
+  // Previous Participation
+  "previous_game": String (Optional),
+  "previous_years": String (Optional),
+  
+  // Document Uploads (Base64 Encoded)
+  "photo_base64": String (Optional),
+  "signature_base64": String (Optional),
+  
+  // Status & Workflow
+  "status": String (ENUM: "pending", "approved", "rejected"),
+  "rejection_reason": String (Optional, required if rejected),
+  "submitted_at": DateTime (Auto-generated),
+  "reviewed_at": DateTime (Optional),
+  "reviewed_by": String (Admin email, optional)
+}
+
+Indexes:
+  - usn (Unique)
+  - status (For filtering pending/approved/rejected)
+  - submitted_at (For chronological sorting)
+
+Business Rules:
+  - Upon approval → Data migrated to PostgreSQL STUDENT table
+  - Upon approval → status changed to "approved" but document retained
+  - Upon rejection → rejection_reason must be provided
+  - Base64 documents stored temporarily (not in PostgreSQL)
+
+
+COLLECTION 2: EVENT_PARTICIPATION_REQUEST
+------------------------------------------
+Description: Student requests to join events (before admin selection)
+Document Structure (JSON Schema):
+
+{
+  "_id": ObjectId (Auto-generated by MongoDB),
+  
+  "usn": String (REQUIRED, Indexed),
+  "student_name": String (REQUIRED),
+  "event_id": Integer (REQUIRED, References PostgreSQL EVENT.id),
+  "event_name": String (REQUIRED, Denormalized),
+  "status": String (ENUM: "pending", "selected", "dropped"),
+  "submitted_at": DateTime (Auto-generated),
+  "processed_at": DateTime (Optional),
+  "processed_by": String (Admin email, optional),
+  "blockchain_hash": String (SHA-256, optional)
+}
+
+Indexes:
+  - Compound Index: (usn, event_id) UNIQUE
+  - event_id (For filtering by event)
+  - status (For filtering pending/selected)
+
+Business Rules:
+  - Upon "selected" → Record created in PostgreSQL APPROVED_PARTICIPANT
+  - blockchain_hash generated when status changes to "selected"
+  - Email notification sent to student when status = "selected"
+  - Duplicate prevention: One student can request once per event
+
+================================================================================
+3. RELATIONSHIPS & CARDINALITY
+================================================================================
+
+RELATIONSHIP 1: USER creates EVENT
+-----------------------------------
+Type: One-to-Many (1:N)
+From: USER (One)
+To: EVENT (Many)
+Foreign Key: EVENT.created_by → USER.id
+Cardinality: 
+  - One USER can create 0 to Many EVENTS
+  - One EVENT must be created by exactly One USER
+Participation: Total on EVENT side (every event must have a creator)
+Delete Rule: CASCADE (if user deleted, their events should be reassigned or deleted)
+
+
+RELATIONSHIP 2: USER approves APPROVED_PARTICIPANT
+---------------------------------------------------
+Type: One-to-Many (1:N)
+From: USER (One)
+To: APPROVED_PARTICIPANT (Many)
+Foreign Key: APPROVED_PARTICIPANT.approved_by → USER.id
+Cardinality:
+  - One USER can approve 0 to Many PARTICIPANTS
+  - One PARTICIPANT approval by exactly One USER
+Participation: Partial (approved_by can be NULL if auto-approved)
+
+
+RELATIONSHIP 3: EVENT has APPROVED_PARTICIPANT
+-----------------------------------------------
+Type: One-to-Many (1:N)
+From: EVENT (One)
+To: APPROVED_PARTICIPANT (Many)
+Foreign Key: APPROVED_PARTICIPANT.event_id → EVENT.id
+Cardinality:
+  - One EVENT can have 0 to Many PARTICIPANTS
+  - One PARTICIPANT record belongs to exactly One EVENT
+Participation: Total on APPROVED_PARTICIPANT side
+Delete Rule: CASCADE (if event deleted, participant records deleted)
+
+
+RELATIONSHIP 4: STUDENT participates in APPROVED_PARTICIPANT
+-------------------------------------------------------------
+Type: One-to-Many (1:N)
+From: STUDENT (One)
+To: APPROVED_PARTICIPANT (Many)
+Foreign Key: APPROVED_PARTICIPANT.usn → STUDENT.usn (Implicit)
+Cardinality:
+  - One STUDENT can be in 0 to Many APPROVED_PARTICIPANT records
+  - One APPROVED_PARTICIPANT record belongs to exactly One STUDENT
+Note: This is currently an implicit relationship (not enforced by FK constraint)
+Recommendation: Add FOREIGN KEY constraint for data integrity
+
+
+RELATIONSHIP 5: EVENT tracks EVENT_ATTENDANCE
+----------------------------------------------
+Type: One-to-Many (1:N)
+From: EVENT (One)
+To: EVENT_ATTENDANCE (Many)
+Foreign Key: EVENT_ATTENDANCE.event_id → EVENT.id
+Cardinality:
+  - One EVENT can have 0 to Many ATTENDANCE records
+  - One ATTENDANCE record belongs to exactly One EVENT
+Delete Rule: CASCADE
+
+
+RELATIONSHIP 6: STUDENT has EVENT_ATTENDANCE
+---------------------------------------------
+Type: One-to-Many (1:N)
+From: STUDENT (One)
+To: EVENT_ATTENDANCE (Many)
+Foreign Key: EVENT_ATTENDANCE.usn → STUDENT.usn (Implicit)
+Cardinality:
+  - One STUDENT can have 0 to Many ATTENDANCE records
+  - One ATTENDANCE record belongs to exactly One STUDENT
+Note: This is currently an implicit relationship (not enforced by FK constraint)
+Recommendation: Add FOREIGN KEY constraint for data integrity
+
+
+RELATIONSHIP 7: USER marks EVENT_ATTENDANCE
+--------------------------------------------
+Type: One-to-Many (1:N)
+From: USER (One)
+To: EVENT_ATTENDANCE (Many)
+Foreign Key: EVENT_ATTENDANCE.marked_by → USER.id
+Cardinality:
+  - One USER can mark 0 to Many ATTENDANCE records
+  - One ATTENDANCE record marked by exactly One USER
+
+
+RELATIONSHIP 8: USER sends EMAIL_AUDIT_LOG
+-------------------------------------------
+Type: One-to-Many (1:N)
+From: USER (One)
+To: EMAIL_AUDIT_LOG (Many)
+Foreign Key: EMAIL_AUDIT_LOG.admin_id → USER.id
+Cardinality:
+  - One USER can send 0 to Many EMAILS
+  - One EMAIL log belongs to exactly One USER
+
+
+RELATIONSHIP 9: STUDENT_SUBMISSION (MongoDB) → STUDENT (PostgreSQL)
+--------------------------------------------------------------------
+Type: One-to-One (1:1) - Data Migration
+Description: When admin approves, data flows from MongoDB to PostgreSQL
+Flow:
+  1. Student submits form → Creates STUDENT_SUBMISSION document (MongoDB)
+  2. Admin reviews and approves → Creates STUDENT record (PostgreSQL)
+  3. STUDENT_SUBMISSION.status updated to "approved"
+Key Link: STUDENT_SUBMISSION.usn = STUDENT.usn
+Business Rule: One-way migration; MongoDB document retained for audit
+
+
+RELATIONSHIP 10: EVENT_PARTICIPATION_REQUEST (MongoDB) → APPROVED_PARTICIPANT (PostgreSQL)
+-------------------------------------------------------------------------------------------
+Type: One-to-One (1:1) - Data Migration
+Description: When admin selects student, request promotes to approved participant
+Flow:
+  1. Student requests to join → Creates EVENT_PARTICIPATION_REQUEST (MongoDB)
+  2. Admin selects student → Creates APPROVED_PARTICIPANT (PostgreSQL)
+  3. EVENT_PARTICIPATION_REQUEST.status updated to "selected"
+Key Link: 
+  - EVENT_PARTICIPATION_REQUEST.usn = APPROVED_PARTICIPANT.usn
+  - EVENT_PARTICIPATION_REQUEST.event_id = APPROVED_PARTICIPANT.event_id
+
+================================================================================
+4. CONSTRAINTS & BUSINESS RULES
+================================================================================
+
+PRIMARY KEY CONSTRAINTS:
+------------------------
+- USER.id: Auto-increment integer
+- STUDENT.usn: String (University Seat Number)
+- EVENT.id: Auto-increment integer
+- APPROVED_PARTICIPANT.id: Auto-increment integer
+- EVENT_ATTENDANCE.id: Auto-increment integer
+- EMAIL_AUDIT_LOG.id: Auto-increment integer
+- STUDENT_SUBMISSION._id: MongoDB ObjectId
+- EVENT_PARTICIPATION_REQUEST._id: MongoDB ObjectId
+
+UNIQUE CONSTRAINTS:
+-------------------
+- USER.email: Must be unique
+- STUDENT.usn: Must be unique
+- STUDENT.email: Must be unique
+- (APPROVED_PARTICIPANT.usn, event_id): Composite unique
+- (EVENT_ATTENDANCE.event_id, usn, attendance_date): Composite unique
+- (STUDENT_SUBMISSION.usn): Unique (MongoDB)
+- (EVENT_PARTICIPATION_REQUEST.usn, event_id): Compound unique (MongoDB)
+
+FOREIGN KEY CONSTRAINTS:
+-------------------------
+- EVENT.created_by → USER.id (ON DELETE SET NULL)
+- APPROVED_PARTICIPANT.event_id → EVENT.id (ON DELETE CASCADE)
+- APPROVED_PARTICIPANT.approved_by → USER.id (ON DELETE SET NULL)
+- EVENT_ATTENDANCE.event_id → EVENT.id (ON DELETE CASCADE)
+- EVENT_ATTENDANCE.marked_by → USER.id (ON DELETE SET NULL)
+- EMAIL_AUDIT_LOG.admin_id → USER.id (ON DELETE RESTRICT)
+
+RECOMMENDED ADDITIONS:
+----------------------
+- APPROVED_PARTICIPANT.usn → STUDENT.usn (ON DELETE CASCADE)
+- EVENT_ATTENDANCE.usn → STUDENT.usn (ON DELETE CASCADE)
+
+CHECK CONSTRAINTS:
+------------------
+- EVENT: end_date >= start_date
+- STUDENT: semester BETWEEN 1 AND 8
+- APPROVED_PARTICIPANT: status IN ('pending', 'approved', 'rejected')
+- EVENT_ATTENDANCE: status IN ('present', 'absent', NULL)
+- EMAIL_AUDIT_LOG: recipient_count >= 0, success_count >= 0, failure_count >= 0
+
+INDEX RECOMMENDATIONS:
+----------------------
+PostgreSQL:
+  - USER.email (Unique B-tree index)
+  - STUDENT.usn (Primary key index)
+  - STUDENT.email (Unique B-tree index)
+  - EVENT.start_date, end_date (B-tree for date range queries)
+  - APPROVED_PARTICIPANT(usn, event_id) (Composite index)
+  - EVENT_ATTENDANCE(event_id, attendance_date) (Composite index)
+
+MongoDB:
+  - STUDENT_SUBMISSION: {usn: 1}, {status: 1}, {submitted_at: -1}
+  - EVENT_PARTICIPATION_REQUEST: {usn: 1, event_id: 1}, {status: 1}
+
+================================================================================
+5. ER DIAGRAM VISUALIZATION GUIDE
+================================================================================
+
+LEGEND:
+-------
+□ = Entity (Table/Collection)
+◇ = Relationship
+─ = Relationship line
+1 = One (Mandatory)
+M = Many
+0..1 = Zero or One (Optional)
+0..M = Zero or Many
+
+DIAGRAM (Text Representation):
+-------------------------------
+
+┌─────────────┐
+│    USER     │
+│ (PostgreSQL)│
+├─────────────┤
+│ id (PK)     │
+│ email       │
+│ password_   │
+│   hash      │
+│ role        │
+│ created_at  │
+└─────────────┘
+       │
+       │ creates (1:M)
+       ▼
+┌─────────────┐
+│    EVENT    │
+│ (PostgreSQL)│
+├─────────────┤
+│ id (PK)     │
+│ name        │
+│ location    │
+│ start_date  │
+│ end_date    │
+│ created_by  │◄──┐
+│ created_at  │   │ (FK)
+└─────────────┘   │
+       │          │
+       │ has (1:M)│
+       ▼          │
+┌─────────────────┴──┐         ┌──────────────────┐
+│ APPROVED_PARTICIPANT│         │     STUDENT      │
+│   (PostgreSQL)       │         │   (PostgreSQL)   │
+├─────────────────────┤         ├──────────────────┤
+│ id (PK)             │         │ usn (PK)         │
+│ usn                 │◄────────┤ name             │
+│ event_id (FK) ──────┘         │ email            │
+│ approved_by (FK) ──┐          │ branch           │
+│ status              │          │ semester         │
+│ blockchain_hash     │          │ phone            │
+│ approved_at         │          │ dob              │
+└─────────────────────┘          │ blood_group      │
+                                 │ parent_name      │
+                                 │ mother_name      │
+                                 │ address          │
+                                 │ created_at       │
+                                 └──────────────────┘
+                                        ▲
+                                        │ migrates from (1:1)
+                                        │
+                          ┌─────────────────────────┐
+                          │  STUDENT_SUBMISSION     │
+                          │      (MongoDB)          │
+                          ├─────────────────────────┤
+                          │ _id (PK)                │
+                          │ usn                     │
+                          │ student_name            │
+                          │ branch                  │
+                          │ semester                │
+                          │ game_sport_competition  │
+                          │ photo_base64            │
+                          │ signature_base64        │
+                          │ status                  │
+                          │ submitted_at            │
+                          │ reviewed_by             │
+                          └─────────────────────────┘
+
+┌──────────────────────┐
+│  EVENT_ATTENDANCE    │
+│   (PostgreSQL)       │
+├──────────────────────┤
+│ id (PK)              │
+│ event_id (FK) ───────┼──┐
+│ usn                  │  │ (links to EVENT)
+│ student_name         │  │
+│ attendance_date      │  │
+│ status               │  │
+│ marked_by (FK) ──────┼──┼──┐ (links to USER)
+│ marked_at            │  │  │
+└──────────────────────┘  │  │
+                          │  │
+┌──────────────────────┐  │  │
+│  EMAIL_AUDIT_LOG     │  │  │
+│   (PostgreSQL)       │  │  │
+├──────────────────────┤  │  │
+│ id (PK)              │  │  │
+│ admin_id (FK) ───────┼──┘  │
+│ subject              │     │
+│ body_preview         │     │
+│ filters_used (JSON)  │     │
+│ recipient_count      │     │
+│ success_count        │     │
+│ failure_count        │     │
+│ sent_at              │     │
+│ blockchain_hash      │     │
+└──────────────────────┘     │
+                             │
+                   ┌─────────┘
+                   │
+            ┌──────▼─────┐
+            │    USER    │
+            └────────────┘
+
+┌────────────────────────────────┐
+│ EVENT_PARTICIPATION_REQUEST    │
+│         (MongoDB)              │
+├────────────────────────────────┤
+│ _id (PK)                       │
+│ usn                            │
+│ student_name                   │
+│ event_id (References EVENT.id) │
+│ event_name                     │
+│ status                         │
+│ submitted_at                   │
+│ processed_by                   │
+│ blockchain_hash                │
+└────────────────────────────────┘
+         │
+         │ promotes to (1:1)
+         ▼
+┌────────────────────┐
+│APPROVED_PARTICIPANT│
+└────────────────────┘
+
+================================================================================
+6. DATA FLOW SUMMARY
+================================================================================
+
+STUDENT REGISTRATION FLOW:
+1. Student logs in (Firebase Auth) → Frontend
+2. Student submits form → MongoDB (STUDENT_SUBMISSION)
+3. Admin reviews → Backend validates
+4. Admin approves → PostgreSQL (STUDENT table)
+5. MongoDB document status updated → "approved"
+
+EVENT PARTICIPATION FLOW:
+1. Admin creates event → PostgreSQL (EVENT)
+2. Student requests to join → MongoDB (EVENT_PARTICIPATION_REQUEST)
+3. Admin reviews requests → Backend
+4. Admin selects student → PostgreSQL (APPROVED_PARTICIPANT)
+5. MongoDB request status updated → "selected"
+6. Blockchain hash generated → Audit trail
+7. Email sent to student → Notification
+
+ATTENDANCE TRACKING FLOW:
+1. Admin opens event attendance page → Frontend
+2. System loads approved participants → From APPROVED_PARTICIPANT
+3. Admin marks attendance → Backend validates
+4. Attendance saved → PostgreSQL (EVENT_ATTENDANCE)
+5. Analytics updated → Real-time metrics
+
+================================================================================
+7. DEPLOYMENT ARCHITECTURE NOTES
+================================================================================
+
+In production (Docker + Nginx + EC2):
+- PostgreSQL runs in dedicated Docker container with persistent volume
+- MongoDB runs in separate Docker container or MongoDB Atlas
+- Backend API runs in Uvicorn container (auto-scaling capable)
+- Frontend served via Nginx container (reverse proxy + static hosting)
+- All containers orchestrated via Docker Compose
+- Deployed on AWS EC2 instance with security groups
+- Database backups automated via cron jobs
+- SSL/TLS certificates for HTTPS (Let's Encrypt)
+
+================================================================================
+END OF ER DIAGRAM DOCUMENTATION
+================================================================================

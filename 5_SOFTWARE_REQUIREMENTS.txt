@@ -1,0 +1,1033 @@
+================================================================================
+                SOFTWARE REQUIREMENTS SPECIFICATION (SRS)
+           RVCE SPORTS MANAGEMENT SYSTEM - VERSION 2.0
+================================================================================
+
+DOCUMENT INFORMATION:
+---------------------
+Project Name: RVCE Sports Management System
+Version: 2.0.0
+Prepared by: Development Team
+Date: January 2026
+Organization: RV College of Engineering, Bangalore
+
+================================================================================
+1. INTRODUCTION
+================================================================================
+
+1.1 PURPOSE
+-----------
+This Software Requirements Specification (SRS) document provides a complete
+description of the RVCE Sports Management System. It details functional and
+non-functional requirements, system interfaces, and design constraints.
+
+The system digitizes and automates the entire sports activity management
+lifecycle at RV College of Engineering, replacing manual paperwork with a
+centralized, secure, and scalable web application.
+
+1.2 SCOPE
+---------
+Project Name: RVCE Sports Management System
+
+The system encompasses:
+- Student registration and profile management
+- Sports event creation and scheduling
+- Participant selection and enrollment
+- Attendance tracking and monitoring
+- Email communication and notifications
+- Analytics and reporting dashboards
+- Admin authentication and authorization
+- Audit trail with blockchain simulation
+
+Benefits:
+- Eliminates manual paperwork and data entry
+- Provides real-time insights into sports participation
+- Ensures data integrity and auditability
+- Enables efficient communication with students
+- Streamlines event management workflows
+
+1.3 DEFINITIONS, ACRONYMS, AND ABBREVIATIONS
+---------------------------------------------
+API: Application Programming Interface
+CRUD: Create, Read, Update, Delete
+DBMS: Database Management System
+DFD: Data Flow Diagram
+ER: Entity-Relationship
+FK: Foreign Key
+HTTPS: Hypertext Transfer Protocol Secure
+JWT: JSON Web Token
+OAuth: Open Authorization
+PK: Primary Key
+RBAC: Role-Based Access Control
+REST: Representational State Transfer
+SMTP: Simple Mail Transfer Protocol
+SQL: Structured Query Language
+SRS: Software Requirements Specification
+SSL/TLS: Secure Sockets Layer / Transport Layer Security
+UI/UX: User Interface / User Experience
+USN: University Seat Number
+
+1.4 INTENDED AUDIENCE
+---------------------
+- Project Stakeholders: College management, sports department heads
+- Development Team: Software engineers, database administrators
+- Quality Assurance Team: Testers, QA engineers
+- Deployment Team: DevOps engineers, system administrators
+- End Users: Students, sports coordinators, administrators
+
+1.5 PRODUCT OVERVIEW
+--------------------
+The RVCE Sports Management System is a full-stack web application built with:
+- Frontend: React.js with Vite for fast, responsive user interface
+- Backend: FastAPI (Python) for high-performance async API
+- Databases: PostgreSQL (relational) + MongoDB (document store)
+- Deployment: Docker containers orchestrated with Docker Compose
+- Hosting: AWS EC2 instance with Nginx reverse proxy
+- Security: JWT authentication, bcrypt password hashing, Firebase OAuth
+
+================================================================================
+2. OVERALL DESCRIPTION
+================================================================================
+
+2.1 PRODUCT PERSPECTIVE
+-----------------------
+The system is a NEW, SELF-CONTAINED web application designed specifically for
+RV College of Engineering's sports management needs. It integrations with:
+
+EXTERNAL SYSTEMS:
+1. Firebase Authentication (Google OAuth for students)
+2. Gmail SMTP Server (Email notifications)
+3. MongoDB Atlas (Optional cloud database)
+4. AWS Services (EC2 hosting, S3 for backups)
+
+SYSTEM INTERFACES:
+- Web Browser (Chrome, Firefox, Safari, Edge - latest 2 versions)
+- SMTP Protocol (Port 587 for email delivery)
+- HTTPS Protocol (Port 443 for secure communication)
+
+HARDWARE INTERFACES:
+- Client: Standard computer/laptop with internet connection
+- Server: AWS EC2 instance (t2.medium or higher recommended)
+- Database: Sufficient storage for ~100K student records (estimated 50GB)
+
+2.2 PRODUCT FUNCTIONS
+---------------------
+HIGH-LEVEL FEATURES:
+
+STUDENT PORTAL:
+- Google Sign-In authentication (@rvce.edu.in domain restriction)
+- Registration form submission with document uploads
+- View available sports events
+- Request participation in events
+- Track approval and selection status
+- View personal profile and activity history
+
+ADMIN PORTAL:
+- Secure login with email/password (JWT-based)
+- Dashboard with real-time statistics
+- Review and approve/reject student registrations
+- Create, edit, and manage sports events
+- Select participants for events
+- Mark and manage event attendance
+- Send bulk emails with filtering (branch, semester)
+- Generate analytics reports and visualizations
+- Export data to Excel/PDF formats
+
+AUTOMATED PROCESSES:
+- Email notifications on approval/rejection/selection
+- Blockchain hash generation for audit trail
+- Data migration from MongoDB to PostgreSQL on approval
+- Real-time dashboard metric calculations
+
+2.3 USER CHARACTERISTICS
+-------------------------
+
+USER TYPE 1: STUDENT
+Education: College undergraduate/postgraduate
+Technical Expertise: Basic computer literacy, familiar with web browsing
+Primary Tasks: Register, view events, request participation
+
+USER TYPE 2: SPORTS COORDINATOR (ADMIN)
+Education: College staff/faculty
+Technical Expertise: Moderate computer skills, familiar with databases
+Primary Tasks: Approve registrations, manage events, mark attendance
+
+USER TYPE 3: DEPARTMENT HEAD (ADMIN)
+Education: Faculty/administrative staff
+Technical Expertise: Basic to moderate computer skills
+Primary Tasks: View reports, send communications, analyze trends
+
+2.4 OPERATING ENVIRONMENT
+-------------------------
+DEVELOPMENT ENVIRONMENT:
+- Operating System: Windows 10/11, macOS, Linux
+- Python: 3.10 or higher
+- Node.js: 18.x or higher
+- PostgreSQL: 14.x or higher
+- MongoDB: 6.x or higher
+
+PRODUCTION ENVIRONMENT:
+- Cloud Platform: AWS EC2 (Ubuntu 22.04 LTS)
+- Containerization: Docker 24.x with Docker Compose
+- Web Server: Nginx 1.24.x
+- SSL: Let's Encrypt certificates (auto-renewed)
+- Database: PostgreSQL 15.x + MongoDB Atlas/Self-hosted
+
+CLIENT ENVIRONMENT:
+- Browser: Chrome 100+, Firefox 100+, Safari 15+, Edge 100+
+- Screen Resolution: Minimum 1366x768 (responsive design down to 360px)
+- Internet: Broadband connection (minimum 2 Mbps recommended)
+
+2.5 DESIGN AND IMPLEMENTATION CONSTRAINTS
+------------------------------------------
+
+TECHNOLOGY CONSTRAINTS:
+- Must use Python for backend (FastAPI framework)
+- Must use React.js for frontend
+- Must use PostgreSQL for transactional data
+- Must use MongoDB for flexible/temporary data
+- Must deploy via Docker containers
+
+SECURITY CONSTRAINTS:
+- All passwords must be hashed using bcrypt (cost factor 12)
+- All API endpoints must require authentication
+- Student authentication limited to @rvce.edu.in emails only
+- HTTPS mandatory for production deployment
+- JWT tokens must expire after configured time (default 24 hours)
+
+DATA CONSTRAINTS:
+- Student USN must be unique across the system
+- Email addresses must be unique (one account per email)
+- Attendance can only be marked within event date range
+- One student can only request participation once per event
+
+REGULATORY CONSTRAINTS:
+- Must maintain audit trail for all approvals and selections
+- Email logs must be retained for compliance
+- Student personal data must be protected (GDPR-inspired practices)
+
+2.6 ASSUMPTIONS AND DEPENDENCIES
+---------------------------------
+
+ASSUMPTIONS:
+- Students have valid @rvce.edu.in Google accounts
+- Internet connectivity available to all users
+- Admin users have been pre-created by system setup
+- College maintains active SMTP server or Gmail account for emails
+- Students have access to photo and signature files for upload
+
+DEPENDENCIES:
+- Firebase service availability for Google OAuth
+- Gmail SMTP server availability for email delivery
+- PostgreSQL database server operational
+- MongoDB database server operational
+- AWS EC2 instance availability (if cloud-hosted)
+- Docker runtime environment functional
+
+================================================================================
+3. FUNCTIONAL REQUIREMENTS
+================================================================================
+
+3.1 STUDENT REGISTRATION MANAGEMENT
+------------------------------------
+
+FR-101: Student Authentication via Google OAuth
+Priority: HIGH | Type: Functional
+
+Description:
+The system shall allow students to authenticate using their Google accounts
+through Firebase OAuth integration.
+
+Inputs:
+- Google OAuth token from Firebase SDK
+- Student email from Google account
+
+Processing:
+1. Validate OAuth token with Firebase
+2. Extract email from token claims
+3. Verify email ends with "@rvce.edu.in"
+4. Create or retrieve student session
+
+Outputs:
+- Authenticated student session
+- Error message if domain invalid
+
+Acceptance Criteria:
+- Only @rvce.edu.in emails accepted
+- Invalid domain shows clear error message
+- Session persists across page refreshes
+
+
+FR-102: Student Registration Form Submission
+Priority: HIGH | Type: Functional
+
+Description:
+The system shall provide a comprehensive registration form for students to
+submit their details and documents.
+
+Inputs:
+- Personal Information: Name, USN, Branch, Semester, DOB, Blood Group
+- Contact Information: Phone, Address, Parent names
+- Academic Information: Course, admission dates, previous participation
+- Documents: Photo (JPEG/PNG), Signature (JPEG/PNG)
+- Sports Information: Game/Sport/Competition, organizing institution, dates
+
+Processing:
+1. Validate all required fields
+2. Convert uploaded files to Base64 encoding
+3. Validate USN format (pattern: 1RVYYBBXXX)
+4. Check for duplicate USN in MongoDB
+5. Create document in student_submissions collection
+6. Set status to "pending"
+
+Outputs:
+- Submission confirmation message
+- Unique submission ID
+- "Pending Approval" status displayed
+
+Acceptance Criteria:
+- All mandatory fields must be filled
+- Photo and signature files must be < 5MB each
+- USN must be unique (duplicate prevention)
+- Form data persisted even if browser closes
+
+
+FR-103: Admin Review and Approval
+Priority: HIGH | Type: Functional
+
+Description:
+The system shall allow admins to review pending registrations and approve
+or reject them with reasons.
+
+Inputs:
+- Admin selection of pending submission
+- Approval decision (Approve/Reject)
+- Rejection reason (if rejecting)
+
+Processing:
+1. Display submission details with photo and signature
+2. If approved:
+   a. Extract data from MongoDB document
+   b. Insert record into PostgreSQL students table
+   c. Update MongoDB status to "approved"
+   d. Send approval email to student
+3. If rejected:
+   a. Update MongoDB status to "rejected"
+   b. Store rejection reason
+   c. Send rejection email with reason
+
+Outputs:
+- Updated submission status
+- Student record in PostgreSQL (if approved)
+- Email notification sent to student
+
+Acceptance Criteria:
+- Admin can view all pending submissions
+- Rejection requires reason (minimum 10 characters)
+- Approval migrates data to PostgreSQL
+- Email notification sent within 5 seconds
+
+
+FR-104: View Registration Status
+Priority: MEDIUM | Type: Functional
+
+Description:
+Students shall be able to view their registration status in real-time.
+
+Inputs:
+- Student authentication token
+
+Processing:
+1. Query MongoDB student_submissions by student email/UID
+2. Retrieve current status and metadata
+3. Display status badge (Pending/Approved/Rejected)
+4. Show rejection reason if applicable
+
+Outputs:
+- Status badge with color coding:
+  * Pending: Yellow/Orange
+  * Approved: Green
+  * Rejected: Red
+- Rejection reason (if rejected)
+- Submission timestamp
+
+Acceptance Criteria:
+- Status updates reflect immediately after admin action
+- Rejection reason clearly visible
+- Students can resubmit after rejection (with new USN if needed)
+
+
+3.2 EVENT MANAGEMENT
+--------------------
+
+FR-201: Create Sports Event
+Priority: HIGH | Type: Functional
+
+Description:
+Admins shall be able to create new sports events with details and date ranges.
+
+Inputs:
+- Event name (required, min 3 characters)
+- Location (required)
+- Start date (required, date picker)
+- End date (required, must be >= start date)
+- Description (optional, rich text)
+
+Processing:
+1. Validate date range (end >= start)
+2. Validate name uniqueness (optional constraint)
+3. Insert record into PostgreSQL events table
+4. Link created_by to admin user ID
+5. Set created_at timestamp
+
+Outputs:
+- New event record in database
+- Event ID generated
+- Success confirmation message
+
+Acceptance Criteria:
+- End date cannot be before start date
+- Event name minimum 3 characters
+- Future or current dates only (no past events)
+- Created event immediately visible to students
+
+
+FR-202: View Available Events (Student)
+Priority: HIGH | Type: Functional
+
+Description:
+Students shall be able to view all available sports events.
+
+Inputs:
+- Student authentication token
+- Optional filters: upcoming, ongoing, past
+
+Processing:
+1. Query PostgreSQL events table
+2. Order by start_date DESC
+3. Calculate event status (upcoming/ongoing/ended)
+4. Display event cards with details
+
+Outputs:
+- List of events with:
+  * Name, location, date range
+  * Description
+  * Status badge
+  * Participant count (if applicable)
+  * "Request to Join" button (if eligible)
+
+Acceptance Criteria:
+- Events sorted by start date (newest first)
+- Past events clearly marked as "Ended"
+- Students cannot request participation in ended events
+
+
+FR-203: Edit/Delete Event
+Priority: MEDIUM | Type: Functional
+
+Description:
+Admins shall be able to edit event details or delete events.
+
+Inputs:
+- Event ID
+- Updated event fields (name, location, dates, description)
+- OR delete confirmation
+
+Processing:
+1. For Edit:
+   a. Validate updated fields
+   b. Update PostgreSQL event record
+   c. Show success message
+2. For Delete:
+   a. Check for existing participants (cascade setting)
+   b. Delete event (cascades to approved_participants, attendance)
+   c. Confirm deletion
+
+Outputs:
+- Updated event record (if edited)
+- Deletion confirmation (if deleted)
+- Associated records cascade-deleted
+
+Acceptance Criteria:
+- Date constraints still enforced on edit
+- Delete shows warning if participants exist
+- Cascade deletion removes all related records
+
+
+3.3 PARTICIPATION MANAGEMENT
+-----------------------------
+
+FR-301: Request Event Participation
+Priority: HIGH | Type: Functional
+
+Description:
+Approved students shall be able to request participation in events.
+
+Inputs:
+- Student USN (from authenticated session)
+- Event ID
+- Student name (from registration)
+
+Processing:
+1. Verify student is approved in student_submissions
+2. Check event hasn't ended
+3. Check for duplicate request (usn + event_id)
+4. Create document in event_participation_requests (MongoDB)
+5. Set status to "pending"
+
+Outputs:
+- Participation request created
+- "Pending" status displayed
+- Request ID generated
+
+Acceptance Criteria:
+- Only approved students can request
+- Cannot request for same event twice
+- Cannot request after event ended
+- Request immediately visible in student's activity
+
+
+FR-302: Admin Select/Drop Participants
+Priority: HIGH | Type: Functional
+
+Description:
+Admins shall be able to review requests and select or drop participants.
+
+Inputs:
+- Event ID
+- List of request IDs
+- Action (Select/Drop)
+
+Processing:
+1. Retrieve participation requests for event
+2. For each selected request:
+   a. Generate blockchain hash (SHA-256)
+   b. Update MongoDB status to "selected"
+   c. Store blockchain_hash and processed_by
+   d. Create record in PostgreSQL approved_participants
+   e. Send email notification to student
+3. For dropped requests:
+   a. Update status to "dropped"
+   b. No email sent (silent drop)
+
+Outputs:
+- Updated request statuses in MongoDB
+- New approved_participant records in PostgreSQL
+- Email notifications sent to selected students
+- Blockchain hashes generated for audit
+
+Acceptance Criteria:
+- Admin can bulk-select multiple students
+- Blockchain hash unique for each selection
+- Email sent within 5 seconds of selection
+- Selected students visible in event roster
+
+
+FR-303: View Participation Status (Student)
+Priority: MEDIUM | Type: Functional
+
+Description:
+Students shall view status of all their participation requests.
+
+Inputs:
+- Student USN
+
+Processing:
+1. Query event_participation_requests by USN
+2. Join with events table for event details
+3. Order by submitted_at DESC
+
+Outputs:
+- Table of participation requests showing:
+  * Event name
+  * Submission date
+  * Status (Pending/Selected/Dropped)
+  * Blockchain hash (if selected)
+
+Acceptance Criteria:
+- All requests visible regardless of status
+- Status updates reflect in real-time
+- Selected events highlighted with green badge
+
+
+3.4 ATTENDANCE TRACKING
+-----------------------
+
+FR-401: Mark Event Attendance
+Priority: HIGH | Type: Functional
+
+Description:
+Admins shall be able to mark daily attendance for event participants.
+
+Inputs:
+- Event ID
+- Attendance date
+- USN and attendance status (Present/Absent) for each participant
+
+Processing:
+1. Retrieve approved participants for event
+2. Validate attendance_date within event date range
+3. For each participant:
+   a. Check for existing attendance record (duplicate prevention)
+   b. Insert or update event_attendance record
+   c. Set marked_by to admin user ID
+   d. Timestamp with marked_at
+
+Outputs:
+- Attendance records created/updated
+- Success message with count (e.g., "Attendance marked for 25 students")
+
+Acceptance Criteria:
+- Only approved participants listed
+- Attendance date must be within event range
+- Duplicate attendance prevented (unique constraint)
+- Bulk marking saves all records atomically
+
+
+FR-402: View Attendance Report
+Priority: MEDIUM | Type: Functional
+
+Description:
+Admins shall be able to view and export attendance reports for events.
+
+Inputs:
+- Event ID
+- Optional date filter
+
+Processing:
+1. Query event_attendance table for event
+2. Group by attendance_date
+3. Calculate present/absent counts
+4. Support export to Excel
+
+Outputs:
+- Attendance table showing:
+  * Date
+  * Total participants
+  * Present count
+  * Absent count
+  * Attendance percentage
+- Export button for Excel download
+
+Acceptance Criteria:
+- Attendance percentage calculated correctly
+- Export includes all columns
+- Report updates immediately after marking
+
+
+3.5 EMAIL COMMUNICATION
+-----------------------
+
+FR-501: Send Bulk Emails with Filtering
+Priority: HIGH | Type: Functional
+
+Description:
+Admins shall be able to send bulk emails to students with filter criteria.
+
+Inputs:
+- Email subject (required, max 255 chars)
+- Email body (required, supports HTML)
+- Filters: Branch (multiselect), Semester (multiselect), USNs (optional)
+
+Processing:
+1. Validate subject and body not empty
+2. Apply filters to query students table
+3. Retrieve matching student emails
+4. For each recipient:
+   a. Replace placeholders ({{name}}, {{usn}})
+   b. Send via SMTP
+   c. Track success/failure
+5. Create record in email_audit_logs
+6. Store filters as JSON, log success/failure counts
+7. Generate blockchain hash for audit
+
+Outputs:
+- Email sent to filtered recipients
+- Audit log entry with recipient count and filters
+- Success message: "Email sent to N students"
+
+Acceptance Criteria:
+- Minimum 1 recipient required
+- Placeholder replacement works correctly
+- Audit log captures all send attempts
+- Failed emails logged with reason
+
+
+FR-502: View Email Audit Logs
+Priority: MEDIUM | Type: Functional
+
+Description:
+Admins shall be able to view history of all bulk emails sent.
+
+Inputs:
+- Admin authentication
+- Optional date filter
+
+Processing:
+1. Query email_audit_logs table
+2. Order by sent_at DESC
+3. Display paginated results (50 per page)
+
+Outputs:
+- Table showing:
+  * Sent date/time
+  * Subject
+  * Filters used
+  * Recipient count
+  * Success/Failure counts
+  * Sent by (admin name)
+
+Acceptance Criteria:
+- Logs retained indefinitely (or per policy)
+- Filters displayed as human-readable text
+- Audit records immutable (no deletion allowed)
+
+
+3.6 ANALYTICS AND REPORTING
+----------------------------
+
+FR-601: Dashboard with Key Metrics
+Priority: HIGH | Type: Functional
+
+Description:
+Admin dashboard shall display real-time statistics and metrics.
+
+Inputs:
+- Admin authentication
+- Optional date range filter
+
+Processing:
+1. Aggregate data from multiple tables:
+   - Total submissions (MongoDB count)
+   - Pending approvals (status='pending' count)
+   - Total events (PostgreSQL count)
+   - Active participants (approved_participants count)
+2. Retrieve recent activity (last 10 registrations)
+3. Calculate status distribution (pie chart data)
+
+Outputs:
+- 4 metric cards showing counts
+- Recent activity table
+- Status distribution pie chart
+- Quick action buttons
+
+Acceptance Criteria:
+- Metrics update in real-time
+- Dashboard loads within 2 seconds
+- Charts rendered using Recharts library
+
+
+FR-602: Participation Analytics
+Priority: MEDIUM | Type: Functional
+
+Description:
+System shall provide analytics on participation trends by branch, semester, etc.
+
+Inputs:
+- Admin request for analytics page
+- Optional filters: date range, branch, event
+
+Processing:
+1. Query student_submissions and approved_participants
+2. GROUP BY branch, calculate participation counts
+3. GROUP BY submitted_at (by month), calculate trends
+4. Calculate attendance rates per event
+
+Outputs:
+- Branch-wise participation pie chart
+- Monthly participation trend line chart
+- Event-wise attendance bar chart
+- Summary statistics table
+
+Acceptance Criteria:
+- Charts interactive (hover tooltips)
+- Data reflects all-time unless filtered
+- Export charts as images (optional)
+
+
+FR-603: Export Data to Excel/PDF
+Priority: MEDIUM | Type: Functional
+
+Description:
+Admins shall be able to export lists and reports to Excel/PDF formats.
+
+Inputs:
+- Data type to export (students, participants, attendance)
+- Optional filters
+- Format selection (Excel/PDF)
+
+Processing:
+1. Query relevant data based on filters
+2. For Excel: Generate .xlsx using openpyxl/xlsxwriter
+3. For PDF: Generate using ReportLab (future)
+4. Include headers, formatting, timestamps
+
+Outputs:
+- Download prompt with generated file
+- Filename format: "[type]_export_YYYYMMDD.xlsx"
+
+Acceptance Criteria:
+- Excel file opens successfully in Microsoft Excel/Google Sheets
+- All columns included with proper headers
+- File downloads immediately (no delay)
+
+
+3.7 SECURITY AND AUTHENTICATION
+--------------------------------
+
+FR-701: Admin Login with JWT
+Priority: HIGH | Type: Security
+
+Description:
+System shall authenticate admins using email/password with JWT tokens.
+
+Inputs:
+- Admin email
+- Admin password (plaintext from form)
+
+Processing:
+1. Query users table by email
+2. Compare password with bcrypt hash
+3. If valid:
+   a. Generate JWT token (expires in 24 hours)
+   b. Include user ID and email in claims
+   c. Return token to frontend
+4. If invalid:
+   a. Return 401 Unauthorized error
+
+Outputs:
+- JWT access token (on success)
+- Error message (on failure)
+
+Acceptance Criteria:
+- Passwords hashed with bcrypt (cost factor 12)
+- JWT includes expiration claim
+- Token stored in localStorage or cookie (frontend)
+- Token validated on all protected endpoints
+
+
+FR-702: Role-Based Access Control (RBAC)
+Priority: HIGH | Type: Security
+
+Description:
+System shall enforce access control based on user roles.
+
+Roles:
+- STUDENT: Can access student portal endpoints only
+- ADMIN: Can access all admin endpoints
+- SUPERUSER: Can manage admin users (future)
+
+Processing:
+1. Extract role from JWT token (for admin) or Firebase token (for student)
+2. Check required role for endpoint
+3. Allow or deny access
+
+Outputs:
+- 200 OK if authorized
+- 403 Forbidden if unauthorized
+
+Acceptance Criteria:
+- Students cannot access admin endpoints (403 response)
+- Admins cannot access student registration
+- Role checked on every protected endpoint
+
+
+FR-703: Blockchain Audit Trail
+Priority: MEDIUM | Type: Security
+
+Description:
+System shall generate cryptographic hashes for critical actions (approvals,
+ selections) to ensure audit integrity.
+
+Inputs:
+- Action data (USN, event ID, admin ID, timestamp, action type)
+
+Processing:
+1. Concatenate input fields into string
+2. Compute SHA-256 hash
+3. Store hash in database (blockchain_hash fields)
+4. Link hash to previous hash (future blockchain chain)
+
+Outputs:
+- 64-character hexadecimal hash
+- Hash stored in approved_participants or email_audit_logs
+
+Acceptance Criteria:
+- Hash generated for every approval and selection
+- Hash immutable once created
+- Hash can be verified by recomputing from stored data
+
+
+================================================================================
+4. NON-FUNCTIONAL REQUIREMENTS
+================================================================================
+
+4.1 PERFORMANCE REQUIREMENTS
+-----------------------------
+
+NFR-101: Response Time
+- Dashboard loads within 2 seconds under normal load
+- API endpoints respond within 500ms (95th percentile)
+- File uploads (photo/signature) complete within 5 seconds
+
+NFR-102: Scalability
+- System supports up to 10,000 concurrent users
+- Database handles 100,000+ student records
+- Attendance marking supports 500+ participants per event
+
+NFR-103: Throughput
+- Email service sends 100+ emails per minute
+- Bulk operations (approval, selection) process 50+ records/second
+
+
+4.2 SAFETY REQUIREMENTS
+-----------------------
+
+NFR-201: Data Backup
+- PostgreSQL backups automated daily
+- MongoDB backups automated daily
+- Backup retention period: 30 days minimum
+- Backups stored in AWS S3 or equivalent
+
+NFR-202: Disaster Recovery
+- Recovery Time Objective (RTO): 4 hours
+- Recovery Point Objective (RPO): 24 hours
+- Database restore procedures documented
+
+
+4.3 SECURITY REQUIREMENTS
+-------------------------
+
+NFR-301: Authentication Security
+- Passwords hashed using bcrypt (cost factor 12)
+- JWT tokens expire after 24 hours
+- OAuth tokens validated server-side
+
+NFR-302: Data Protection
+- All API communication over HTTPS (TLS 1.3)
+- SQL injection prevention (parameterized queries)
+- XSS protection (input sanitization)
+- CSRF protection (token-based)
+
+NFR-303: Access Control
+- Role-based access strictly enforced
+- Sensitive endpoints require authentication
+- Admin actions logged with timestamps
+
+
+4.4 USABILITY REQUIREMENTS
+--------------------------
+
+NFR-401: User Interface
+- Responsive design (mobile, tablet, desktop)
+- Consistent color scheme and branding
+- Accessible to users with disabilities (WCAG 2.1 Level AA)
+
+NFR-402: Ease of Use
+- New users can complete registration in < 10 minutes
+- Admin dashboard intuitive (no training required)
+- Error messages clear and actionable
+
+
+4.5 RELIABILITY REQUIREMENTS
+-----------------------------
+
+NFR-501: Availability
+- System uptime: 99.5% (excluding planned maintenance)
+- Planned maintenance window: Sundays 2-4 AM IST
+- Unplanned downtime < 2 hours per month
+
+NFR-502: Fault Tolerance
+- Database connection retry logic (3 attempts)
+- Email send failures logged (retry mechanism)
+- Frontend graceful degradation if API unavailable
+
+
+4.6 MAINTAINABILITY REQUIREMENTS
+---------------------------------
+
+NFR-601: Code Quality
+- Backend code coverage: > 70%
+- Linting: PEP8 compliance (Python), ESLint (JavaScript)
+- Documentation: All major functions documented
+
+NFR-602: Logging
+- Application logs stored in files and rotated daily
+- Log levels: DEBUG, INFO, WARNING, ERROR
+- Centralized logging (e.g., ELK stack) for production
+
+
+4.7 PORTABILITY REQUIREMENTS
+-----------------------------
+
+NFR-701: Deployment
+- Application containerized using Docker
+- Deployment via Docker Compose (single command)
+- Supports Linux, Windows, macOS development
+
+NFR-702: Database Migration
+- Schema migrations automated (Alembic for PostgreSQL)
+- Rollback capability for failed migrations
+
+
+================================================================================
+5. SYSTEM FEATURES MATRIX
+================================================================================
+
+┌────────────────────────────┬──────────┬──────────┬────────────────────────┐
+│ Feature                    │ Priority │ Effort   │ Dependencies           │
+├────────────────────────────┼──────────┼──────────┼────────────────────────┤
+│ Student Google OAuth       │ HIGH     │ Medium   │ Firebase SDK           │
+│ Registration Form          │ HIGH     │ High     │ MongoDB, File uploads  │
+│ Admin Approval             │ HIGH     │ Medium   │ PostgreSQL, Email      │
+│ Event Creation             │ HIGH     │ Low      │ PostgreSQL             │
+│ Participation Request      │ HIGH     │ Medium   │ MongoDB, PostgreSQL    │
+│ Participant Selection      │ HIGH     │ Medium   │ Blockchain, Email      │
+│ Attendance Marking         │ HIGH     │ Medium   │ PostgreSQL             │
+│ Bulk Email                 │ HIGH     │ High     │ SMTP, Filtering        │
+│ Dashboard Analytics        │ MEDIUM   │ Medium   │ Recharts, Queries      │
+│ Export Data                │ MEDIUM   │ Low      │ Excel library          │
+│ Email Audit Logs           │ MEDIUM   │ Low      │ PostgreSQL             │
+│ Attendance Reports         │ MEDIUM   │ Low      │ PostgreSQL             │
+│ Edit/Delete Event          │ LOW      │ Low      │ PostgreSQL CASCADE     │
+└────────────────────────────┴──────────┴──────────┴────────────────────────┘
+
+
+================================================================================
+6. DEPLOYMENT REQUIREMENTS
+================================================================================
+
+6.1 DOCKER CONTAINERIZATION
+----------------------------
+- Frontend: Nginx container serving React build
+- Backend: Uvicorn container running FastAPI  
+- PostgreSQL: Official postgres:15 image with persistent volume
+- MongoDB: Official mongo:6 image with persistent volume
+- Orchestration: Docker Compose with networks and volumes
+
+6.2 NGINX CONFIGURATION
+-----------------------
+- Reverse proxy for backend (/api routes)
+- Static file serving for frontend (/)
+- SSL/TLS termination
+- Gzip compression enabled
+- Request rate limiting
+
+6.3 AWS EC2 DEPLOYMENT
+----------------------
+- Instance type: t2.medium (2 vCPU, 4GB RAM minimum)
+- OS: Ubuntu 22.04 LTS
+- Security groups: Ports 80, 443, 22 (SSH) open
+- Elastic IP for static addressing
+- CloudWatch monitoring enabled
+
+6.4 CONTINUOUS INTEGRATION/DEPLOYMENT
+--------------------------------------
+- Git repository: GitHub/GitLab
+- CI/CD: GitHub Actions or Jenkins
+- Automated testing on pull requests
+- Automated deployment to staging/production
+
+================================================================================
+END OF SOFTWARE REQUIREMENTS SPECIFICATION
+================================================================================

@@ -1,0 +1,805 @@
+================================================================================
+                    DEPLOYMENT ARCHITECTURE DOCUMENTATION
+                  RVCE SPORTS MANAGEMENT SYSTEM
+      DOCKER + NGINX + AWS EC2 + POSTGRESQL + MONGODB
+================================================================================
+
+1. EXECUTIVE SUMMARY
+--------------------
+This document provides a comprehensive guide to the production deployment
+architecture of the RVCE Sports Management System. The system is deployed
+using containerized microservices orchestrated with Docker Compose, served
+via Nginx reverse proxy, and hosted on AWS EC2 infrastructure.
+
+KEY TECHNOLOGIES:
+- Containerization: Docker 24.x + Docker Compose
+- Web Server: Nginx 1.24.x (Reverse Proxy + SSL Termination)
+- Cloud Platform: AWS EC2 (Ubuntu 22.04 LTS)
+- Databases: PostgreSQL 15.x + MongoDB 6.x / MongoDB Atlas
+- SSL/TLS: Let's Encrypt (Automated certificates)
+- CI/CD: GitHub Actions (Automated deployment)
+
+================================================================================
+2. ARCHITECTURE OVERVIEW
+================================================================================
+
+HIGH-LEVEL ARCHITECTURE DIAGRAM:
+---------------------------------
+
+                          INTERNET
+                             │
+                             │ HTTPS (Port 443)
+                             │ HTTP (Port 80 → Redirect to 443)
+                             ▼
+                    ┌─────────────────┐
+                    │  AWS EC2        │
+                    │  INSTANCE       │
+                    │  (Ubuntu 22.04) │
+                    └─────────────────┘
+                             │
+                ┌────────────┴────────────┐
+                │                         │
+        ┌───────▼────────┐       ┌───────▼────────┐
+        │  NGINX         │       │  LET'S ENCRYPT │
+        │  CONTAINER     │       │  CERTBOT       │
+        │  - Port 443    │◄──────│  (SSL Certs)   │
+        │  - SSL Term    │       └────────────────┘
+        │  - Reverse     │
+        │    Proxy       │
+        └───────┬────────┘
+                │
+      ┌─────────┴───────────┐
+      │                     │
+┌─────▼──────┐      ┌───────▼──────┐
+│ FRONTEND   │      │  BACKEND     │
+│ (Nginx)    │      │  (FastAPI)   │
+│ Port: 80   │      │  Port: 8000  │
+│ React Build│      │  Uvicorn     │
+└────────────┘      └───────┬──────┘
+                            │
+                ┌───────────┴───────────┐
+                │                       │
+        ┌───────▼────────┐      ┌───────▼────────┐
+        │  POSTGRESQL    │      │   MONGODB      │
+        │  Container     │      │   Container    │
+        │  Port: 5432    │      │   Port: 27017  │
+        │  Volume:       │      │   Volume:      │
+        │  postgres_data │      │   mongo_data   │
+        └────────────────┘      └────────────────┘
+                │                       │
+                │                       │
+        ┌───────▼────────┐      ┌───────▼────────┐
+        │  PERSISTENT    │      │  PERSISTENT    │
+        │  VOLUME        │      │  VOLUME        │
+        │  (50GB)        │      │  (30GB)        │
+        └────────────────┘      └────────────────┘
+
+                    ┌────────────────┐
+                    │  AWS S3        │
+                    │  BACKUPS       │
+                    │  - PG Dumps    │
+                    │  - Mongo Dumps │
+                    │  (Daily)       │
+                    └────────────────┘
+
+NETWORK TOPOLOGY:
+-----------------
+- All containers connected via Docker bridge network (app-network)
+- Internal DNS resolution: containers communicate via service names
+- External access ONLY through Nginx (ports 80, 443)
+- SSH access to EC2: Port 22 (restricted to admin IPs)
+
+================================================================================
+3. DOCKER CONTAINERIZATION
+================================================================================
+
+CONTAINER INVENTORY:
+--------------------
+1. nginx-proxy (Reverse Proxy + SSL)
+2. frontend (React + Nginx)
+3. backend (FastAPI + Uvicorn)
+4. postgres (PostgreSQL database)
+5. mongo (MongoDB database)
+
+--------------------------------------------------------------------------------
+CONTAINER 1: NGINX REVERSE PROXY
+--------------------------------------------------------------------------------
+
+Dockerfile: nginx/Dockerfile
+
+FROM nginx:1.24-alpine
+
+# Copy custom nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy SSL certificates (provided by Let's Encrypt)
+COPY ssl/fullchain.pem /etc/nginx/ssl/fullchain.pem
+COPY ssl/privkey.pem /etc/nginx/ssl/privkey.pem
+
+# Expose ports
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]
+
+Nginx Configuration (nginx.conf):
+
+http {
+    # Upstream backend API
+    upstream backend {
+        server backend:8000;
+    }
+
+    # Upstream frontend
+    upstream frontend {
+        server frontend:80;
+    }
+
+    # HTTP → HTTPS Redirect
+    server {
+        listen 80;
+        server_name sports.rvce.edu.in;
+        
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # HTTPS Main Server
+    server {
+        listen 443 ssl http2;
+        server_name sports.rvce.edu.in;
+
+        # SSL Configuration
+        ssl_certificate /etc/nginx/ssl/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+
+        # Security Headers
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+
+        # Gzip Compression
+        gzip on;
+        gzip_vary on;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+
+        # API Routes → Backend
+        location /api {
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Timeout settings
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        # Frontend Routes → React App
+        location / {
+            proxy_pass http://frontend;
+            proxy_set_header Host $host;
+            
+            # SPA fallback (for React Router)
+            try_files $uri $uri/ /index.html;
+        }
+
+        # Static files caching
+        location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2)$ {
+            proxy_pass http://frontend;
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+}
+
+Purpose:
+- SSL/TLS termination (HTTPS encryption)
+- Reverse proxy for backend API (/api routes)
+- Serve frontend static files (/ routes)
+- HTTP to HTTPS redirection
+- Request rate limiting (future)
+- Load balancing (future multi-instance)
+
+
+--------------------------------------------------------------------------------
+CONTAINER 2: FRONTEND (REACT + NGINX)
+--------------------------------------------------------------------------------
+
+Dockerfile: frontend/Dockerfile
+
+# STAGE 1: Build React App
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY . .
+
+# Build production bundle
+RUN npm run build
+
+# STAGE 2: Serve with Nginx
+FROM nginx:alpine
+
+# Copy build output from stage 1
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy custom nginx config for SPA
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+
+Frontend nginx.conf:
+
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA Routing Support
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Disable caching for index.html
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+Build Optimizations:
+- Tree-shaking: Removes unused code
+- Code splitting: Lazy loads routes
+- Minification: Compresses JS/CSS
+- Gzip: Further compression at Nginx level
+
+
+--------------------------------------------------------------------------------
+CONTAINER 3: BACKEND (FASTAPI + UVICORN)
+--------------------------------------------------------------------------------
+
+Dockerfile: backend/Dockerfile
+
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first (layer caching)
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Expose port
+EXPOSE 8000
+
+# Run Uvicorn server
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+Environment Variables (.env file):
+
+DATABASE_URL=postgresql+asyncpg://postgres:strong_password@postgres:5432/sports_db
+MONGO_URI=mongodb://mongo:27017
+SECRET_KEY=your-super-secret-jwt-key-change-in-production
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+FRONTEND_ORIGIN=https://sports.rvce.edu.in
+
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-specific-password
+
+ADMIN_EMAIL=admin@rvce.edu.in
+ADMIN_PASSWORD=securepassword123
+
+Performance Settings:
+- Workers: 4 (CPU cores)
+- Max Concurrent Requests: 1000
+- Connection Pool: 20 connections (PostgreSQL)
+- Request Timeout: 60 seconds
+
+
+--------------------------------------------------------------------------------
+CONTAINER 4: POSTGRESQL DATABASE
+--------------------------------------------------------------------------------
+
+Docker Compose Service:
+
+postgres:
+  image: postgres:15-alpine
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: strong_password_change_in_production
+    POSTGRES_DB: sports_db
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  ports:
+    - "5432:5432"  # Only for local development, remove in production
+  networks:
+    - app-network
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres"]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+
+Initialization Script (init.sql):
+
+-- Create extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Tables created automatically by SQLAlchemy on first run
+
+Backup Strategy:
+- Cron job runs daily at 2 AM
+- Command: pg_dump sports_db | gzip > backup_$(date +%Y%m%d).sql.gz
+- Upload to AWS S3
+- Retention: 30 days
+
+Restore Process:
+1. Stop backend container: docker-compose stop backend
+2. Drop database: docker exec postgres psql -U postgres -c "DROP DATABASE sports_db;"
+3. Restore: gunzip < backup.sql.gz | docker exec -i postgres psql -U postgres
+4. Start backend: docker-compose start backend
+
+
+--------------------------------------------------------------------------------
+CONTAINER 5: MONGODB DATABASE
+--------------------------------------------------------------------------------
+
+Docker Compose Service:
+
+mongo:
+  image: mongo:6
+  environment:
+    MONGO_INITDB_ROOT_USERNAME: admin
+    MONGO_INITDB_ROOT_PASSWORD: mongo_password
+  volumes:
+    - mongo_data:/data/db
+  ports:
+    - "27017:27017"  # Only for development, remove in production
+  networks:
+    - app-network
+  restart: unless-stopped
+  healthcheck:
+    test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+    interval: 30s
+    timeout: 10s
+    retries: 5
+
+Alternative: MongoDB Atlas (Cloud-Hosted):
+
+MONGO_URI=mongodb+srv://username:password@cluster0.mongodb.net/sports_db?retryWrites=true&w=majority
+
+Benefits:
+- Managed service (auto backups, monitoring)
+- Scalability (auto-scaling)
+- Free tier available (512MB storage)
+
+Backup Strategy (Self-Hosted):
+- Cron job runs daily at 2:30 AM
+- Command: mongodump --out /backups/$(date +%Y%m%d)
+- Upload to AWS S3
+- Retention: 30 days
+
+
+================================================================================
+4. DOCKER COMPOSE ORCHESTRATION
+================================================================================
+
+Complete docker-compose.yml:
+
+version: '3.8'
+
+services:
+  # Reverse Proxy
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/sports_db
+      - MONGO_URI=mongodb://mongo:27017
+      - SECRET_KEY=${SECRET_KEY}
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend/logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sports_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # MongoDB Database
+  mongo:
+    image: mongo:6
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  mongo_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
+
+Deployment Commands:
+
+# Build and start all containers
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f
+
+# Stop all containers
+docker-compose down
+
+# Rebuild specific service
+docker-compose up -d --build backend
+
+# Scale backend (multiple instances)
+docker-compose up -d --scale backend=3
+
+
+================================================================================
+5. AWS EC2 DEPLOYMENT
+================================================================================
+
+EC2 INSTANCE SPECIFICATIONS:
+-----------------------------
+Instance Type: t2.medium
+  - vCPUs: 2
+  - RAM: 4 GB
+  - Storage: 50 GB SSD (root) + 30 GB EBS (databases)
+  - Network: Enhanced networking enabled
+
+Operating System: Ubuntu 22.04 LTS (64-bit ARM or x86)
+
+Security Group Configuration:
+
+Inbound Rules:
+| Type  | Protocol | Port Range | Source          | Description         |
+|-------|----------|------------|-----------------|---------------------|
+| SSH   | TCP      | 22         | Admin IPs only  | SSH Access          |
+| HTTP  | TCP      | 80         | 0.0.0.0/0       | HTTP (redirects)    |
+| HTTPS | TCP      | 443        | 0.0.0.0/0       | HTTPS Traffic       |
+
+Outbound Rules:
+All traffic allowed (default)
+
+INITIAL SERVER SETUP:
+---------------------
+
+1. Connect to EC2 Instance:
+ssh -i your-key.pem ubuntu@ec2-xx-xx-xx-xx.compute.amazonaws.com
+
+2. Update System:
+sudo apt update && sudo apt upgrade -y
+
+3. Install Docker:
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker ubuntu
+logout  # Reconnect for group changes
+
+4. Install Docker Compose:
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+5. Clone Repository:
+git clone https://github.com/your-org/rvce-sports.git
+cd rvce-sports
+
+6. Configure Environment:
+cp backend/.env.example backend/.env
+nano backend/.env  # Edit with production values
+
+7. SSL Certificate Setup (Let's Encrypt):
+sudo apt install certbot
+sudo certbot certonly --standalone -d sports.rvce.edu.in
+sudo cp /etc/letsencrypt/live/sports.rvce.edu.in/fullchain.pem nginx/ssl/
+sudo cp /etc/letsencrypt/live/sports.rvce.edu.in/privkey.pem nginx/ssl/
+
+8. Start Services:
+docker-compose up -d --build
+
+9. Verify Deployment:
+curl https://sports.rvce.edu.in/api/health
+
+
+AUTOMATED SSL RENEWAL:
+-----------------------
+Crontab entry:
+
+0 3 * * * certbot renew --quiet && cp /etc/letsencrypt/live/sports.rvce.edu.in/*.pem /home/ubuntu/rvce-sports/nginx/ssl/ && docker-compose restart nginx
+
+
+================================================================================
+6. CI/CD PIPELINE (GITHUB ACTIONS)
+================================================================================
+
+Workflow File: .github/workflows/deploy.yml
+
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Run Tests
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pytest tests/
+      
+      - name: Build Docker Images
+        run: |
+          docker-compose build
+      
+      - name: Deploy to EC2
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > key.pem
+          chmod 600 key.pem
+          ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@$EC2_HOST << 'EOF'
+            cd rvce-sports
+            git pull origin main
+            docker-compose down
+            docker-compose up -d --build
+          EOF
+      
+      - name: Health Check
+        run: |
+          sleep 30
+          curl -f https://sports.rvce.edu.in/api/health || exit 1
+
+GitHub Secrets to Configure:
+- EC2_SSH_KEY: Private key for EC2 SSH
+- EC2_HOST: EC2 instance public IP or DNS
+- POSTGRES_PASSWORD: Database password
+- SECRET_KEY: JWT secret key
+
+
+================================================================================
+7. MONITORING & LOGGING
+================================================================================
+
+APPLICATION LOGS:
+-----------------
+Backend logs: backend/logs/app.log
+Nginx access logs: nginx/logs/access.log
+Nginx error logs: nginx/logs/error.log
+
+Log Rotation (logrotate.conf):
+
+/home/ubuntu/rvce-sports/backend/logs/*.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+}
+
+MONITORING STACK (Optional):
+----------------------------
+- Prometheus: Metrics collection
+- Grafana: Metrics visualization
+- Alertmanager: Alert notifications
+
+Docker Compose Addition:
+
+prometheus:
+  image: prom/prometheus
+  volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  ports:
+    - "9090:9090"
+
+grafana:
+  image: grafana/grafana
+  ports:
+    - "3000:3000"
+
+
+================================================================================
+8. BACKUP AND DISASTER RECOVERY
+================================================================================
+
+AUTOMATED BACKUPS:
+------------------
+Backup Script (backup.sh):
+
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# PostgreSQL Backup
+docker exec postgres pg_dump -U postgres sports_db | gzip > /backups/postgres_${DATE}.sql.gz
+
+# MongoDB Backup
+docker exec mongo mongodump --out /backup/mongo_${DATE}
+
+# Upload to S3
+aws s3 cp /backups/ s3://rvce-sports-backups/ --recursive
+
+# Cleanup old backups (keep 30 days)
+find /backups -name "*.gz" -mtime +30 -delete
+
+Crontab:
+0 2 * * * /home/ubuntu/rvce-sports/backup.sh >> /var/log/backup.log 2>&1
+
+DISASTER RECOVERY PLAN:
+-----------------------
+RTO (Recovery Time Objective): 4 hours
+RPO (Recovery Point Objective): 24 hours
+
+Recovery Steps:
+1. Launch new EC2 instance
+2. Install Docker + Docker Compose
+3. Restore latest backups from S3
+4. Update DNS to point to new instance
+5. Verify system health
+
+
+================================================================================
+9. SECURITY HARDENING
+================================================================================
+
+1. FIREWALL (UFW):
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+
+2. FAIL2BAN (Brute Force Protection):
+sudo apt install fail2ban
+sudo systemctl enable fail2ban
+
+3. AUTOMATIC UPDATES:
+sudo apt install unattended-upgrades
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+
+4. DATABASE SECURITY:
+- PostgreSQL: Disable external access (remove port mapping in production)
+- MongoDB: Enable authentication
+- Strong passwords stored in environment variables
+
+5. DOCKER SECURITY:
+- Run containers as non-root user
+- Limit container resources (memory, CPU)
+- Scan images for vulnerabilities: docker scan backend
+
+
+================================================================================
+10. PERFORMANCE OPTIMIZATION
+================================================================================
+
+1. NGINX CACHING:
+proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=api_cache:10m max_size=1g;
+
+2. DATABASE CONNECTION POOLING:
+- PostgreSQL: SQLAlchemy pool_size=20
+- MongoDB: Motor max_pool_size=50
+
+3. GZIP COMPRESSION:
+- Nginx gzip enabled for text/css/js
+
+4. CDN (Future):
+- Serve static assets via CloudFront
+
+5. HORIZONTAL SCALING:
+- docker-compose up -d --scale backend=5
+
+
+================================================================================
+END OF DEPLOYMENT ARCHITECTURE DOCUMENTATION
+================================================================================
